@@ -54,6 +54,14 @@ namespace Reconciler.Tests
         {
         }
 
+        [TestInitialize]
+        public void Initialize()
+        {
+#if EFCORE
+            new Context().Database.EnsureCreated();
+#endif
+        }
+
         void ClearDbSet<T>(DbSet<T> set) where T : class
         {
             set.RemoveRange(set.ToArray());
