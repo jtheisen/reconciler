@@ -16,6 +16,7 @@
     <Version>1.0.0.0</Version>
     <FileVersion>1.0.0.0</FileVersion>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <PackageVersion>1.0.0.0</PackageVersion>
     <Authors>Jens Theisen</Authors>
     <Product>Jens Theisen</Product>
     <Copyright>Copyright © 2018 Jens Theisen</Copyright>

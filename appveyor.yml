@@ -17,7 +17,16 @@ assembly_info:
   file: '**\AssemblyInfo.*'
   assembly_version: '{version}'
   assembly_file_version: '{version}'
-  assembly_informational_version: '{version}'
+  assembly_informational_version: '{nugetVersion}'
+
+dotnet_csproj:
+  patch: true
+  file: 'Reconciler\EfCore\*.csproj'
+  version: '{version}'
+  package_version: '{nugetVersion}'
+  assembly_version: '{version}'
+  file_version: '{version}'
+  informational_version: '{nugetVersion}'
 
 before_build:
 - cmd: nuget restore
@@ -28,7 +37,7 @@ build:
 after_build:
 - ps: echo "version:" "$env:version"
 - ps: nuget pack Reconciler\Ef6\Reconciler.Ef6.csproj -version "$env:version"
-- ps: dotnet pack Reconciler\EfCore\Reconciler.EfCore.csproj
+- ps: dotnet pack -o . Reconciler\EfCore\Reconciler.EfCore.csproj
 
 artifacts:
 - path: '**\Reconciler.Ef6.*.nupkg'
