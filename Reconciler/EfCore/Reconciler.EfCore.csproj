@@ -19,6 +19,9 @@
     <PackageVersion>1.0.0.0</PackageVersion>
     <Authors>Jens Theisen</Authors>
     <Product>Jens Theisen</Product>
+    <PackageProjectUrl>https://github.com/jtheisen/reconciler</PackageProjectUrl>
+    <PackageTags>entity-framework ef entityframework reconciler</PackageTags>
+    <Description>Update an entity graph in store to a given one by inserting, updating and removing the respective entities.</Description>
     <Copyright>Copyright © 2018 Jens Theisen</Copyright>
   </PropertyGroup>
 
