@@ -92,6 +92,20 @@ namespace Reconciler.Tests
         public DbSet<Tag> Tags { get; set; }
 
 #if EF6
+
+        // Connection string only relevant for EF6 as EF Core uses in-memory testing.
+        public Context()
+            : base(GetConnectionString())
+        {
+        }
+
+        static String GetConnectionString()
+        {
+            return Environment.GetEnvironmentVariable("appveyor") == null
+                ? "Context" // use app.config
+                : @"Server=(local)\SQL2017;Database=reconcileref6;User ID=sa;Password=Password12!";
+        }
+
         protected override void OnModelCreating(DbModelBuilder builder)
         {
             builder.Entity<Address>().HasOptional(a => a.Image).WithRequired();
