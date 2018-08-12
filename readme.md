@@ -1,4 +1,6 @@
-# Graph Reconciler for Entity Framework 6 and Entity Framework Core
+# Graph Reconciler for Entity Framework 6 and Core
+
+[![Build status](https://ci.appveyor.com/api/projects/status/4qjaph7n7hpptso7?svg=true)](https://ci.appveyor.com/project/jtheisen/reconciler)
 
 ## Teaser
 
