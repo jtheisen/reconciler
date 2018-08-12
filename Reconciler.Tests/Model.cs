@@ -101,6 +101,8 @@ namespace Reconciler.Tests
 
         static String GetConnectionString()
         {
+            Console.WriteLine($"env.appveyor={Environment.GetEnvironmentVariable("appveyor")}");
+
             return Environment.GetEnvironmentVariable("appveyor") == null
                 ? "Context" // use app.config
                 : @"Server=(local)\SQL2017;Database=reconcileref6;User ID=sa;Password=Password12!";
