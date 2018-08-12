@@ -31,7 +31,7 @@ after_build:
 - ps: dotnet pack Reconciler\EfCore\Reconciler.EfCore.csproj
 
 artifacts:
-- path: '**\Reconciler.Ef6.nupkg'
+- path: '**\Reconciler.Ef6.*.nupkg'
   name: nuget-package-ef6
-- path: '**\Reconciler.EfCore.nupkg'
+- path: '**\Reconciler.EfCore.*.nupkg'
   name: nuget-package-efcore
