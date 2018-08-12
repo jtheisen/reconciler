@@ -20,7 +20,7 @@ before_build:
 build:
   verbosity: minimal
 
-# after_build:
+after_build:
 - ps: echo "version:" "$env:version"
 - ps: nuget pack Reconciler\Ef6\Reconciler.Ef6.csproj -version "$env:version"
 - ps: nuget pack Reconciler\EfCore\Reconciler.EfCore.csproj -version "$env:version"
