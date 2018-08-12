@@ -19,17 +19,14 @@ before_build:
 
 build:
   verbosity: minimal
-  publish_nuget: true
 
 # after_build:
-# - ps: nuget pack Reconciler\Ef6\Reconciler.Ef6.csproj -version "$env:version"
-# - ps: nuget pack Reconciler\EfCore\Reconciler.EfCore.csproj -version "$env:version"
+- ps: echo "version:" "$env:version"
+- ps: nuget pack Reconciler\Ef6\Reconciler.Ef6.csproj -version "$env:version"
+- ps: nuget pack Reconciler\EfCore\Reconciler.EfCore.csproj -version "$env:version"
 
-# nuget:
-#   project_feed: true
-
-# artifacts:
-# - path: '**\Reconciler.Ef6.nupkg'
-#   name: nuget-package-ef6
-# - path: '**\Reconciler.EfCore.nupkg'
-#   name: nuget-package-efcore
+artifacts:
+- path: '**\Reconciler.Ef6.nupkg'
+  name: nuget-package-ef6
+- path: '**\Reconciler.EfCore.nupkg'
+  name: nuget-package-efcore
