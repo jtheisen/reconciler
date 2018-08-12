@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package >
+  <metadata>
+    <id>Reconciler.Ef6</id>
+    <version>0.0.0-unset</version>
+    <title> Reconciler</title>
+    <authors>Jens Theisen</authors>
+    <owners>Jens Theisen</owners>
+    <projectUrl>https://github.com/jtheisen/reconciler</projectUrl>
+    <!-- <iconUrl>http://ICON_URL_HERE_OR_DELETE_THIS_LINE</iconUrl> -->
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Update an entity graph in store to a given one by inserting, updating and removing the respective entities.</description>
+    <copyright>Copyright 2018 Jens Theisen</copyright>
+    <tags>entity-framework ef entityframework reconciler</tags>
+  </metadata>
+</package>
