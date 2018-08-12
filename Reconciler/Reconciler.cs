@@ -24,6 +24,8 @@ namespace MonkeyBusters.Reconciliation.Internal
         public abstract IQueryable<E> AugmentInclude(IQueryable<E> query);
 
         public abstract Task ReconcileAsync(DbContext db, E attachedEntity, E templateEntity);
+
+        public abstract void Normalize(DbContext db, E entity);
     }
 
     class EntityReconciler<E, F> : Reconciler<E>
@@ -77,6 +79,8 @@ namespace MonkeyBusters.Reconciliation.Internal
                 }
             }
         }
+
+        public override void Normalize(DbContext db, E entity) => db.Normalize(selector(entity), extent);
     }
 
     class CollectionReconciler<E, F> : Reconciler<E>
@@ -145,6 +149,40 @@ namespace MonkeyBusters.Reconciliation.Internal
                 await db.ReconcileAsync(pair.AttachedEntity, pair.TemplateEntity, extent);
             }
         }
+
+        public class IdComparer : IComparer<Object>
+        {
+            static String GetId(Object o)
+            {
+                var result =  o.GetType().GetProperty("Id")?.GetValue(o)?.ToString();
+
+                if (result == null) throw new Exception("No Id property found.");
+
+                return result;
+            }
+
+            public Int32 Compare(Object x, Object y)
+            {
+                return Comparer<String>.Default.Compare(GetId(x), GetId(y));
+            }
+        }
+
+        public override void Normalize(DbContext db, E entity)
+        {
+            var collection = selector(entity);
+
+            if (!(collection is List<F> list))
+            {
+                throw new Exception("Only lists are normalizable.");
+            }
+
+            list.Sort(new IdComparer());
+
+            foreach (var item in collection)
+            {
+                db.Normalize(item, extent);
+            }
+        }
     }
 
     /// <summary>
@@ -198,6 +236,20 @@ namespace MonkeyBusters.Reconciliation.Internal
         {
             reconcilers.Add(new EntityReconciler<E, F>(selector, extent, false));
             return this;
+        }
+    }
+
+    public static class InternalExtensionsForTesting
+    {
+        public static void Normalize<E>(this DbContext db, E entity, Action<ExtentBuilder<E>> extent)
+            where E : class
+        {
+            var builder = new ExtentBuilder<E>();
+            extent?.Invoke(builder);
+            foreach (var reconciler in builder.reconcilers)
+            {
+                reconciler.Normalize(db, entity);
+            }
         }
     }
 }

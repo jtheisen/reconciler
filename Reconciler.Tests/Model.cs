@@ -102,8 +102,8 @@ namespace Reconciler.Tests
 #if EFCORE
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            optionsBuilder.UseSqlServer(@"Data Source=.\;Initial Catalog=reconcilerefcore;Integrated Security=true");
-            //optionsBuilder.UseInMemoryDatabase("Reconciler");
+            //optionsBuilder.UseSqlServer(@"Data Source=.\;Initial Catalog=reconcilerefcore;Integrated Security=true");
+            optionsBuilder.UseInMemoryDatabase("Reconciler");
         }
 
         protected override void OnModelCreating(ModelBuilder builder)

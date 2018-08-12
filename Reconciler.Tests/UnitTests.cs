@@ -134,23 +134,27 @@ namespace Reconciler.Tests
             };
         }
 
-        void TestGraph<E>(E original, E target, Action<ExtentBuilder<E>> mapping)
+        void TestGraph<E>(E original, E target, Action<ExtentBuilder<E>> extent)
             where E : class
         {
             PrepareDbWithGraph(target);
 
-            var reloadedTarget = new Context().LoadExtent(target, mapping);
+            var reloadedTarget = new Context().LoadExtent(target, extent);
 
             PrepareDbWithGraph(original);
 
             {
                 var db = new Context();
-                var attachedEntity = db.Reconcile(target, mapping);
+                var attachedEntity = db.Reconcile(target, extent);
                 var entries = db.ChangeTracker.Entries().Select(e => new EntityWithState { Entry = e }).ToArray();
                 db.SaveChanges();
             }
 
-            var reloadedUpdate = new Context().LoadExtent(target, mapping);
+            var reloadedUpdate = new Context().LoadExtent(target, extent);
+
+            new Context().Normalize(original, extent);
+            new Context().Normalize(reloadedTarget, extent);
+            new Context().Normalize(reloadedUpdate, extent);
 
             var settings = new JsonSerializerSettings
             {
