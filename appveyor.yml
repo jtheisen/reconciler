@@ -17,16 +17,16 @@ assembly_info:
   file: '**\AssemblyInfo.*'
   assembly_version: '{version}'
   assembly_file_version: '{version}'
-  assembly_informational_version: '{nugetVersion}'
+  assembly_informational_version: '{version}'
 
 dotnet_csproj:
   patch: true
   file: 'Reconciler\EfCore\*.csproj'
   version: '{version}'
-  package_version: '{nugetVersion}'
+  package_version: '{version}'
   assembly_version: '{version}'
   file_version: '{version}'
-  informational_version: '{nugetVersion}'
+  informational_version: '{version}'
 
 before_build:
 - cmd: nuget restore
