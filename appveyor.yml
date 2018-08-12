@@ -20,12 +20,15 @@ before_build:
 build:
   verbosity: minimal
 
-after_build:
-- ps: nuget pack Reconciler\Ef6\Reconciler.Ef6.csproj -version "$env:version"
-- ps: nuget pack Reconciler\EfCore\Reconciler.EfCore.csproj -version "$env:version"
+# after_build:
+# - ps: nuget pack Reconciler\Ef6\Reconciler.Ef6.csproj -version "$env:version"
+# - ps: nuget pack Reconciler\EfCore\Reconciler.EfCore.csproj -version "$env:version"
 
-artifacts:
-- path: '**\Reconciler.Ef6.nupkg'
-  name: nuget-package-ef6
-- path: '**\Reconciler.EfCore.nupkg'
-  name: nuget-package-efcore
+nuget:
+  project_feed: true
+
+# artifacts:
+# - path: '**\Reconciler.Ef6.nupkg'
+#   name: nuget-package-ef6
+# - path: '**\Reconciler.EfCore.nupkg'
+#   name: nuget-package-efcore
