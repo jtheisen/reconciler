@@ -22,7 +22,7 @@ entities as required.
 It's primary use case are updates on retrieving multiple related entities
 retrieved from a client through an API.
 
-It is a successor to the abandoned [`GraphDiff`](https://github.com/zzzprojects/GraphDiff) library.
+It is a replacement for the [`GraphDiff`](https://github.com/zzzprojects/GraphDiff) library.
 
 The EF6 and EFCore versions share the same source code as far as possible
 to ensure consistency.
@@ -66,14 +66,19 @@ The are some things to be aware of:
 ## GraphDiff
 
 Before writing this replacement I used the [`GraphDiff`](https://github.com/zzzprojects/GraphDiff) library, but
-since it is no longer maintained I became motivated to write my own solution.
+since it is no longer maintained I became motivated to write my own solution. In particular, I wanted
 
-As I don't fully understand the original there are some differences beyond the
-names of functions: GraphDiff had `OwnedEntity`, `OwnedCollection` and
+- Entity Framework Core support,
+- async/await support and
+- really understand what's going on.
+
+As I don't fully understand the original there are some differences beyond the names of functions: GraphDiff had `OwnedEntity`, `OwnedCollection` and
 `AssociatedCollection` as options for how to define the extent,
 and I don't quite know what the difference between associated and owned is.
 
-`Reconciler` has `WithOne`, `WithMany` and `WithShared`: `WithOne` and
+`Reconciler` has `WithOne`, `WithMany` and `WithShared`:
+
+`WithOne` and
 `WithMany` reconcile a scalar or collection navigational property, respectively,
 through respective addition, update and removal operations. `WithShared`
 only works on scalar navigational properties and doesn't remove a formerly
