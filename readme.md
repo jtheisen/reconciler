@@ -27,6 +27,18 @@ It is a replacement for the [`GraphDiff`](https://github.com/zzzprojects/GraphDi
 The EF6 and EFCore versions share the same source code as far as possible
 to ensure consistency.
 
+## Nuget
+
+There is one Nuget package for each of the two frameworks:
+
+```
+Install-Package Reconciler.Ef6
+```
+
+```
+Install-Package Reconciler.EfCore
+```
+
 ## Definitions
 
 - **Template entities** are the entities to reconcile towards
@@ -49,7 +61,7 @@ The are some things to be aware of:
   will probably never be.
 - The foreign key properties in the template entity must be set
   to match the respective navigational properties before the call
-  to one of the `Reconcile` overloads. For example, it should be that
+  to one of the `Reconcile` overloads is made. For example, it should be that
   `person.AddressId == person.Address.Id` in the unit test's sample model.
 - The extent must represent a subtree, ie. have no cycles, and all
   entities must appear only once.
