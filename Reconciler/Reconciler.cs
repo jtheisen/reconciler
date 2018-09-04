@@ -298,7 +298,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <summary>
         /// Reconciles the stored entity graph extending as far as described by the given extent with the one given by entity.
         /// It makes a number of load requests from the store, but all modifications are merely scheduled in the context.
-        /// This overload take a prefetched attached entity that can allow the skipping of the load request in case of a
+        /// This overload takes a prefetched attached entity that can allow the skipping of the load request in case of a
         /// trivial extent.
         /// </summary>
         /// <param name="db">The context.</param>
