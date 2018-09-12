@@ -6,10 +6,12 @@
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <DefineConstants>TRACE;DEBUG;EFCORE</DefineConstants>
+    <DocumentationFile>bin\Debug\netstandard2.0\Reconciler.EfCore.xml</DocumentationFile>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
     <DefineConstants>TRACE;EFCORE</DefineConstants>
+    <DocumentationFile>bin\Release\netstandard2.0\Reconciler.EfCore.xml</DocumentationFile>
   </PropertyGroup>
 
   <PropertyGroup>
