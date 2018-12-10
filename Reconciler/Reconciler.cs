@@ -263,6 +263,9 @@ namespace Microsoft.EntityFrameworkCore
 {
     using MonkeyBusters.Reconciliation.Internal;
 
+    /// <summary>
+    /// The public interface to the Reconciler.
+    /// </summary>
     public static class ReconciliationExtensions
     {
         /// <summary>
@@ -273,10 +276,10 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="templateEntity">The detached graph to reconcile with.</param>
         /// <param name="extent">The extent of the subgraph to reconcile.</param>
         /// <returns>The attached entity.</returns>
-        public static Task<E> ReconcileAsync<E>(this DbContext db, E entity, Action<ExtentBuilder<E>> extent)
+        public static Task<E> ReconcileAsync<E>(this DbContext db, E templateEntity, Action<ExtentBuilder<E>> extent)
             where E : class
         {
-            return db.ReconcileAsync(null, entity, extent);
+            return db.ReconcileAsync(null, templateEntity, extent);
         }
 
         /// <summary>
@@ -284,13 +287,13 @@ namespace Microsoft.EntityFrameworkCore
         /// It makes a number of load requests from the store, but all modifications are merely scheduled in the context.
         /// </summary>
         /// <param name="db">The context.</param>
-        /// <param name="entity">The detached graph to reconcile with.</param>
+        /// <param name="templateEntity">The detached graph to reconcile with.</param>
         /// <param name="extent">The extent of the subgraph to reconcile.</param>
         /// <returns>The attached entity.</returns>
-        public static E Reconcile<E>(this DbContext db, E entity, Action<ExtentBuilder<E>> extent)
+        public static E Reconcile<E>(this DbContext db, E templateEntity, Action<ExtentBuilder<E>> extent)
             where E : class
         {
-            var task = db.ReconcileAsync(entity, extent);
+            var task = db.ReconcileAsync(templateEntity, extent);
             task.Wait();
             return task.Result;
         }
@@ -302,7 +305,8 @@ namespace Microsoft.EntityFrameworkCore
         /// trivial extent.
         /// </summary>
         /// <param name="db">The context.</param>
-        /// <param name="entity">The detached graph to reconcile with.</param>
+        /// <param name="attachedEntity">The prefetched graph to reconcile.</param>
+        /// <param name="templateEntity">The detached graph to reconcile with.</param>
         /// <param name="extent">The extent of the subgraph to reconcile.</param>
         /// <returns>The attached entity.</returns>
         internal static async Task<E> ReconcileAsync<E>(this DbContext db, E attachedEntity, E templateEntity, Action<ExtentBuilder<E>> extent)
