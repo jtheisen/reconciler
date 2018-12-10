@@ -87,6 +87,8 @@ namespace Reconciler.Tests
         {
             public Guid? AddressId { get; set; }
 
+            public String City { get; set; }
+
             public Boolean IncludeAddressImage { get; set; }
             public Boolean IncldueTagPayload { get; set; }
 
@@ -126,36 +128,48 @@ namespace Reconciler.Tests
                 Address = new Address
                 {
                     Id = addressId,
+                    City = options?.City ?? "Bochum",
                     Image = options?.IncludeAddressImage == true
                         ? new AddressImage { AddressId = addressId }
                         : null
                 },
-                Tags = personTags
+                Tags = personTags,
             };
         }
 
         void TestGraph<E>(E original, E target, Action<ExtentBuilder<E>> extent)
             where E : class
         {
+            TestGraph(original, target, extent, out var reloadedTarget, out var reloadedUpdate);
+
+            AssertGraphEquality(original, reloadedTarget, reloadedUpdate);
+        }
+
+        void TestGraph<E>(E original, E target, Action<ExtentBuilder<E>> extent, out E reloadedTarget, out E reloadedUpdate)
+            where E : class
+        {
             PrepareDbWithGraph(target);
 
-            var reloadedTarget = new Context().LoadExtent(target, extent);
+            reloadedTarget = new Context().LoadExtent(target, extent);
 
             PrepareDbWithGraph(original);
 
             {
                 var db = new Context();
                 var attachedEntity = db.Reconcile(target, extent);
-                var entries = db.ChangeTracker.Entries().Select(e => new EntityWithState { Entry = e }).ToArray();
+                //var entries = db.ChangeTracker.Entries().Select(e => new EntityWithState { Entry = e }).ToArray();
                 db.SaveChanges();
             }
 
-            var reloadedUpdate = new Context().LoadExtent(target, extent);
+            reloadedUpdate = new Context().LoadExtent(target, extent);
 
             new Context().Normalize(original, extent);
             new Context().Normalize(reloadedTarget, extent);
             new Context().Normalize(reloadedUpdate, extent);
+        }
 
+        private static void AssertGraphEquality<E>(E original, E reloadedTarget, E reloadedUpdate) where E : class
+        {
             var settings = new JsonSerializerSettings
             {
                 ReferenceLoopHandling = ReferenceLoopHandling.Ignore
@@ -221,6 +235,21 @@ namespace Reconciler.Tests
                     .WithMany(p => p.Tags, with => with
                         .WithShared(e => e.Tag))
             );
+        }
+
+        [TestMethod]
+        public void TestImmutable()
+        {
+            TestGraph(
+                MakeGraph(new GraphOptions { City = "Bochum" }),
+                MakeGraph(new GraphOptions { City = "Witten" }),
+                map => map
+                    .WithOne(p => p.Address, map2 => map2
+                        .WithReadOnly(a => a.City)),
+                out var reloadedTarget, out var reloadedUpdate
+            );
+
+            Assert.AreEqual(reloadedUpdate.Address.City, "Bochum");
         }
     }
 }

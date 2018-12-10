@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
+using System.Reflection;
 
 #if EF6
 using System.Data.Entity;
@@ -185,6 +186,29 @@ namespace MonkeyBusters.Reconciliation.Internal
         }
     }
 
+    abstract class AbstractModifier<E>
+        where E : class
+    {
+        public abstract void Modify(DbContext db, E attachedEntity, E templateEntity);
+    }
+
+    class ReadOnlyModifier<E> : AbstractModifier<E>
+        where E : class
+    {
+        private readonly String property;
+
+        public ReadOnlyModifier(String property)
+        {
+            this.property = property;
+        }
+
+        public override void Modify(DbContext db, E attachedEntity, E templateEntity)
+        {
+            var entry = db.Entry(attachedEntity);
+            entry.CurrentValues[property] = entry.OriginalValues[property];
+        }
+    }
+
     /// <summary>
     /// Builder class for building up tree extents.
     /// </summary>
@@ -192,6 +216,8 @@ namespace MonkeyBusters.Reconciliation.Internal
     public class ExtentBuilder<E> where E : class
     {
         internal List<Reconciler<E>> reconcilers = new List<Reconciler<E>>();
+
+        internal List<AbstractModifier<E>> properties = new List<AbstractModifier<E>>();
 
         /// <summary>
         /// Include a scalar navigational property in the current extent as owned - the referenced
@@ -237,6 +263,17 @@ namespace MonkeyBusters.Reconciliation.Internal
             reconcilers.Add(new EntityReconciler<E, F>(selector, extent, false));
             return this;
         }
+
+        public ExtentBuilder<E> WithReadOnly<F>(Expression<Func<E, F>> selector)
+        {
+            properties.Add(new ReadOnlyModifier<E>(Properties.GetPropertyName(selector)));
+            return this;
+        }
+
+        //public ExtentBuilder<E> WithBlacked<F>(Expression<Func<E, F>> selector)
+        //{
+
+        //}
     }
 
     public static class InternalExtensionsForTesting
@@ -347,6 +384,11 @@ namespace Microsoft.EntityFrameworkCore
                 db.UpdateEntity(attachedEntity, templateEntity);
             }
 
+            foreach (var property in builder.properties)
+            {
+                property.Modify(db, attachedEntity, templateEntity);
+            }
+
             return attachedEntity;
         }
 
@@ -383,6 +425,41 @@ namespace Microsoft.EntityFrameworkCore
             var task = db.LoadExtentAsync(entity, extent);
             task.Wait();
             return task.Result;
+        }
+    }
+
+    static class Properties
+    {
+        internal static String GetPropertyName<E, F>(Expression<Func<E, F>> selector)
+        {
+            return GetPropertyInfo(selector).Name;
+        }
+
+        internal static PropertyInfo GetPropertyInfo<E, T>(Expression<Func<E, T>> selector)
+        {
+            MemberExpression exp = null;
+
+            //this line is necessary, because sometimes the expression comes in as Convert(originalExpression)
+            if (selector.Body is UnaryExpression)
+            {
+                var UnExp = (UnaryExpression)selector.Body;
+                if (UnExp.Operand is MemberExpression)
+                {
+                    exp = (MemberExpression)UnExp.Operand;
+                }
+                else
+                    throw new ArgumentException();
+            }
+            else if (selector.Body is MemberExpression)
+            {
+                exp = (MemberExpression)selector.Body;
+            }
+            else
+            {
+                throw new ArgumentException();
+            }
+
+            return (PropertyInfo)exp.Member;
         }
     }
 }
