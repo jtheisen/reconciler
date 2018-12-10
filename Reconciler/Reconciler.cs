@@ -187,25 +187,71 @@ namespace MonkeyBusters.Reconciliation.Internal
     }
 
     abstract class AbstractModifier<E>
-        where E : class
     {
         public abstract void Modify(DbContext db, E attachedEntity, E templateEntity);
     }
 
-    class ReadOnlyModifier<E> : AbstractModifier<E>
+    abstract class AbstractPropertyModifier<E> : AbstractModifier<E>
         where E : class
     {
-        private readonly String property;
+        protected readonly String property;
 
-        public ReadOnlyModifier(String property)
+        public AbstractPropertyModifier(String property)
         {
             this.property = property;
         }
+    }
+
+    class ReadOnlyModifier<E> : AbstractPropertyModifier<E>
+        where E : class
+    {
+        public ReadOnlyModifier(String property) : base(property) { }
 
         public override void Modify(DbContext db, E attachedEntity, E templateEntity)
         {
             var entry = db.Entry(attachedEntity);
             entry.CurrentValues[property] = entry.OriginalValues[property];
+        }
+    }
+
+    class BlackenModifier<E, T> : AbstractPropertyModifier<E>
+        where E : class
+    {
+        public BlackenModifier(String property) : base(property) { }
+
+        public override void Modify(DbContext db, E attachedEntity, E templateEntity)
+        {
+            var entry = db.Entry(attachedEntity);
+            entry.CurrentValues[property] = default(T);
+        }
+    }
+
+    class ActionModifier<E> : AbstractPropertyModifier<E>
+        where E : class
+    {
+        private readonly Action<E> action;
+        private readonly Boolean onlyOnAdditions;
+
+        public ActionModifier(String property, Action<E> action, Boolean onlyOnAdditions)
+            : base(property)
+        {
+            this.action = action;
+            this.onlyOnAdditions = onlyOnAdditions;
+        }
+
+        public override void Modify(DbContext db, E attachedEntity, E templateEntity)
+        {
+            var entry = db.Entry(attachedEntity);
+
+            if (entry.State != EntityState.Added)
+            {
+                entry.CurrentValues[property] = entry.OriginalValues[property];
+            }
+
+            if (!onlyOnAdditions || entry.State == EntityState.Added)
+            {
+                action(attachedEntity);
+            }
         }
     }
 
@@ -264,16 +310,31 @@ namespace MonkeyBusters.Reconciliation.Internal
             return this;
         }
 
-        public ExtentBuilder<E> WithReadOnly<F>(Expression<Func<E, F>> selector)
+        public ExtentBuilder<E> WithReadOnly<T>(Expression<Func<E, T>> selector)
         {
             properties.Add(new ReadOnlyModifier<E>(Properties.GetPropertyName(selector)));
             return this;
         }
 
-        //public ExtentBuilder<E> WithBlacked<F>(Expression<Func<E, F>> selector)
-        //{
+        public ExtentBuilder<E> WithBlacked<T>(Expression<Func<E, T>> selector)
+        {
+            properties.Add(new BlackenModifier<E, T>(Properties.GetPropertyName(selector)));
+            return this;
+        }
 
-        //}
+        public ExtentBuilder<E> OnInsertion(Expression<Func<E, Boolean>> definition)
+        {
+            var info = Properties.GetEqualityExpressionInfo(definition);
+            properties.Add(new ActionModifier<E>(info.Property.Name, e => info.Property.SetValue(e, info.Definition(e)), onlyOnAdditions: true));
+            return this;
+        }
+
+        public ExtentBuilder<E> OnUpdate(Expression<Func<E, Boolean>> definition)
+        {
+            var info = Properties.GetEqualityExpressionInfo(definition);
+            properties.Add(new ActionModifier<E>(info.Property.Name, e => info.Property.SetValue(e, info.Definition(e)), onlyOnAdditions: false));
+            return this;
+        }
     }
 
     public static class InternalExtensionsForTesting
@@ -327,10 +388,42 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="templateEntity">The detached graph to reconcile with.</param>
         /// <param name="extent">The extent of the subgraph to reconcile.</param>
         /// <returns>The attached entity.</returns>
+        public static async Task<E> ReconcileAndSaveChangesAsync<E>(this DbContext db, E templateEntity, Action<ExtentBuilder<E>> extent)
+            where E : class
+        {
+            var attachedEntity = await db.ReconcileAsync(null, templateEntity, extent);
+            await db.SaveChangesAsync();
+            return attachedEntity;
+        }
+
+        /// <summary>
+        /// Reconciles the stored entity graph extending as far as described by the given extent with the one given by entity.
+        /// It makes a number of load requests from the store, but all modifications are merely scheduled in the context.
+        /// </summary>
+        /// <param name="db">The context.</param>
+        /// <param name="templateEntity">The detached graph to reconcile with.</param>
+        /// <param name="extent">The extent of the subgraph to reconcile.</param>
+        /// <returns>The attached entity.</returns>
         public static E Reconcile<E>(this DbContext db, E templateEntity, Action<ExtentBuilder<E>> extent)
             where E : class
         {
             var task = db.ReconcileAsync(templateEntity, extent);
+            task.Wait();
+            return task.Result;
+        }
+
+        /// <summary>
+        /// Reconciles the stored entity graph extending as far as described by the given extent with the one given by entity.
+        /// It makes a number of load requests from the store, but all modifications are merely scheduled in the context.
+        /// </summary>
+        /// <param name="db">The context.</param>
+        /// <param name="templateEntity">The detached graph to reconcile with.</param>
+        /// <param name="extent">The extent of the subgraph to reconcile.</param>
+        /// <returns>The attached entity.</returns>
+        public static E ReconcileAndSaveChanges<E>(this DbContext db, E templateEntity, Action<ExtentBuilder<E>> extent)
+            where E : class
+        {
+            var task = db.ReconcileAndSaveChangesAsync(templateEntity, extent);
             task.Wait();
             return task.Result;
         }
@@ -460,6 +553,36 @@ namespace Microsoft.EntityFrameworkCore
             }
 
             return (PropertyInfo)exp.Member;
+        }
+
+        internal class EqualityExpressionDefinition<E>
+        {
+            public PropertyInfo Property { get; set; }
+            public Func<E, Object> Definition { get; set; }
+        }
+
+        internal static EqualityExpressionDefinition<E> GetEqualityExpressionInfo<E>(Expression<Func<E, Boolean>> selector)
+        {
+            if (
+                selector.Body is BinaryExpression binaryExpression &&
+                binaryExpression.NodeType == ExpressionType.Equal &&
+                binaryExpression.Left is MemberExpression memberExpression2 &&
+                memberExpression2.Expression is ParameterExpression targetParameterExpression
+            )
+            {
+                var lambda = Expression.Lambda(binaryExpression.Right, targetParameterExpression);
+                var compiled = lambda.Compile();
+
+                return new EqualityExpressionDefinition<E>
+                {
+                    Property = (PropertyInfo)memberExpression2.Member,
+                    Definition = e => compiled.DynamicInvoke(e)
+                };
+            }
+            else
+            {
+                throw new ArgumentException("Binary expression is supposed to be of the form 'e => e.<Property> == <expr>");
+            }
         }
     }
 }

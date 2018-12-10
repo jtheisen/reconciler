@@ -251,5 +251,43 @@ namespace Reconciler.Tests
 
             Assert.AreEqual(reloadedUpdate.Address.City, "Bochum");
         }
+
+        [TestMethod]
+        public void TestBlacked()
+        {
+            TestGraph(
+                MakeGraph(new GraphOptions { City = "Bochum" }),
+                MakeGraph(new GraphOptions { City = "Witten" }),
+                map => map
+                    .WithOne(p => p.Address, map2 => map2
+                        .WithBlacked(a => a.City)),
+                out var reloadedTarget, out var reloadedUpdate
+            );
+
+            Assert.AreEqual(reloadedUpdate.Address.City, null);
+        }
+
+        [TestMethod]
+        public void TestFixes()
+        {
+            Action<ExtentBuilder<Person>> GetExtent() {
+                return map => map
+                    .WithOne(p => p.Address)
+                    .OnInsertion(p => p.CreatedAt == DateTimeOffset.Now)
+                    .OnUpdate(p => p.ModifiedAt == DateTimeOffset.Now)
+                ;
+            };
+
+            new Context().ReconcileAndSaveChanges(MakeGraph(), GetExtent());
+
+            var initialPerson = new Context().LoadExtent(MakeGraph(), GetExtent());
+
+            new Context().ReconcileAndSaveChanges(MakeGraph(), GetExtent());
+
+            var updatedPerson = new Context().LoadExtent(MakeGraph(), GetExtent());
+
+            Assert.AreEqual(initialPerson.CreatedAt, updatedPerson.CreatedAt);
+            Assert.AreNotEqual(initialPerson.ModifiedAt, updatedPerson.ModifiedAt);
+        }
     }
 }

@@ -26,6 +26,10 @@ namespace Reconciler.Tests
 
         public Guid Id { get; set; }
 
+        public DateTimeOffset CreatedAt { get; set; }
+
+        public DateTimeOffset ModifiedAt { get; set; }
+
         public Guid AddressId { get; set; }
 
         public Address Address { get; set; }
@@ -37,6 +41,8 @@ namespace Reconciler.Tests
     class PersonTag
     {
         public Guid Id { get; set; }
+
+        public DateTimeOffset? DeletedAt { get; set; }
 
         public Guid PersonId { get; set; }
 
