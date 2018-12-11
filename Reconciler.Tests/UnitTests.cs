@@ -249,22 +249,31 @@ namespace Reconciler.Tests
                 out var reloadedTarget, out var reloadedUpdate
             );
 
-            Assert.AreEqual(reloadedUpdate.Address.City, "Bochum");
+            Assert.AreEqual("Bochum", reloadedUpdate.Address.City);
         }
 
         [TestMethod]
         public void TestBlacked()
         {
-            TestGraph(
-                MakeGraph(new GraphOptions { City = "Bochum" }),
-                MakeGraph(new GraphOptions { City = "Witten" }),
-                map => map
-                    .WithOne(p => p.Address, map2 => map2
-                        .WithBlacked(a => a.City)),
-                out var reloadedTarget, out var reloadedUpdate
-            );
+            var graph = MakeGraph(new GraphOptions { City = "Bochum" });
 
-            Assert.AreEqual(reloadedUpdate.Address.City, null);
+            PrepareDbWithGraph(graph);
+
+            Action<ExtentBuilder<Person>> GetExtent()
+            {
+                return map => map
+                    .WithOne(p => p.Address, map2 => map2
+                        .WithBlacked(a => a.City)
+                    )
+                ;
+            };
+
+            var reconciled = new Context().Reconcile(graph, GetExtent());
+
+            var reloaded = new Context().LoadExtent(graph, GetExtent());
+
+            Assert.AreEqual(null, reconciled.Address.City);
+            Assert.AreEqual(null, reloaded.Address.City);
         }
 
         [TestMethod]

@@ -47,6 +47,30 @@ Install-Package Reconciler.EfCore
   of the first parameter that is to be reconciled as defined by
   the second parameter to the `Reconcile` extension methods.
 
+## Further features
+
+The extent definition can also contain certain extra information to help with common scenarios that would otherwise often require some convoluted manual code.
+
+### Fixing
+
+Sometimes we need to employ certain fixes on nested parts of the graph on saving:
+
+    .OnInsertion(e => e.Id = Guid.New())
+    .OnInsertion(e => e.CreatedAt == DateTimeOffset.Now)
+    .OnUpdate(e => e.ModifiedAt == DateTimeOffset.Now)
+    .OnUpdate((e, i) => e.OrderInParent == i)
+
+The `OnUpdate` definitions apply to insertions as well.
+
+Note the use of the equality operator, as the assignment operator can't be used in expression trees in C#. Also note that the insertion definitions prevent modifications on updates - you don't have to worry about modified `CreatedAt` values being persisted to storage.
+
+### Exclude properties
+
+Sometimes some properties should not be updated, and sometimes they shouldn't even be passed to a client on loading:
+
+    .WithReadOnly(e => e.Unmodifiable)
+    .WithBlacked(e => e.Secret)
+
 ## Some details and caveats
 
 The are some things to be aware of:

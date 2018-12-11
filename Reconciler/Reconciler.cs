@@ -26,6 +26,8 @@ namespace MonkeyBusters.Reconciliation.Internal
 
         public abstract Task ReconcileAsync(DbContext db, E attachedEntity, E templateEntity);
 
+        public abstract Task LoadAsync(DbContext db, E attachedEntity);
+
         public abstract void Normalize(DbContext db, E entity);
     }
 
@@ -79,6 +81,13 @@ namespace MonkeyBusters.Reconciliation.Internal
                     await db.ReconcileAsync(templateEntity, extent);
                 }
             }
+        }
+
+        public override async Task LoadAsync(DbContext db, E attachedBaseEntity)
+        {
+            if (extent == null) return;
+            var attachedEntity = selector(attachedBaseEntity);
+            await db.LoadExtentAsync(attachedEntity, extent);
         }
 
         public override void Normalize(DbContext db, E entity) => db.Normalize(selector(entity), extent);
@@ -148,6 +157,16 @@ namespace MonkeyBusters.Reconciliation.Internal
             foreach (var pair in toUpdate)
             {
                 await db.ReconcileAsync(pair.AttachedEntity, pair.TemplateEntity, extent);
+            }
+        }
+
+        public override async Task LoadAsync(DbContext db, E attachedBaseEntity)
+        {
+            if (extent == null) return;
+            var attachedCollection = selector(attachedBaseEntity);
+            foreach (var attachedEntity in attachedCollection)
+            {
+                await db.LoadExtentAsync(attachedEntity, extent);
             }
         }
 
@@ -269,7 +288,6 @@ namespace MonkeyBusters.Reconciliation.Internal
         /// Include a scalar navigational property in the current extent as owned - the referenced
         /// entity will be inserted, updated and removed as appropriate.
         /// </summary>
-        /// <typeparam name="F"></typeparam>
         /// <param name="selector">The navigational property to include.</param>
         /// <param name="extent">Optionally the nested extent if it's not trivial.</param>
         /// <returns>The same builder.</returns>
@@ -284,7 +302,6 @@ namespace MonkeyBusters.Reconciliation.Internal
         /// Include a scalar navigational property in the current extent as owned - the referenced
         /// entities will be inserted, updated and removed as appropriate.
         /// </summary>
-        /// <typeparam name="F"></typeparam>
         /// <param name="selector">The navigational property to include.</param>
         /// <param name="extent">Optionally the nested extent if it's not trivial.</param>
         /// <returns>The same builder.</returns>
@@ -299,7 +316,6 @@ namespace MonkeyBusters.Reconciliation.Internal
         /// Include a scalar navigational property in the current extent as shared - the referenced
         /// entity will be inserted, updated as appropriate, but never removed.
         /// </summary>
-        /// <typeparam name="F"></typeparam>
         /// <param name="selector">The navigational property to include.</param>
         /// <param name="extent">Optionally the nested extent if it's not trivial.</param>
         /// <returns>The same builder.</returns>
@@ -310,18 +326,35 @@ namespace MonkeyBusters.Reconciliation.Internal
             return this;
         }
 
+        /// <summary>
+        /// Declares that differing template values of the given column property should be ignored on reconciliation.
+        /// </summary>
+        /// <param name="selector">The column to ignore on reconciliation.</param>
+        /// <returns>The same builder.</returns>
         public ExtentBuilder<E> WithReadOnly<T>(Expression<Func<E, T>> selector)
         {
             properties.Add(new ReadOnlyModifier<E>(Properties.GetPropertyName(selector)));
             return this;
         }
 
+        /// <summary>
+        /// Declares that the given column property should not be returned from either loads and reconciliations (the
+        /// value returned will be default(T)). This also implies `WithReadOnly`.
+        /// </summary>
+        /// <param name="selector">The column to blacken on load and reconciliation.</param>
+        /// <returns>The same builder.</returns>
         public ExtentBuilder<E> WithBlacked<T>(Expression<Func<E, T>> selector)
         {
             properties.Add(new BlackenModifier<E, T>(Properties.GetPropertyName(selector)));
             return this;
         }
 
+        /// <summary>
+        /// Define an assignment that will be executed on all insertions. The assignment must be defined with an expression
+        /// of the form `e => e.&lt;Property> == &lt;value>`.
+        /// </summary>
+        /// <param name="definition">An equality expression of the form `e => e.&lt;Property> == &lt;value>`.</param>
+        /// <returns>The same builder.</returns>
         public ExtentBuilder<E> OnInsertion(Expression<Func<E, Boolean>> definition)
         {
             var info = Properties.GetEqualityExpressionInfo(definition);
@@ -329,6 +362,12 @@ namespace MonkeyBusters.Reconciliation.Internal
             return this;
         }
 
+        /// <summary>
+        /// Define an assignment that will be executed on all updates, including insertions. The assignment must be defined with an expression
+        /// of the form `e => e.&lt;Property> == &lt;value>`.
+        /// </summary>
+        /// <param name="definition">An equality expression of the form `e => e.&lt;Property> == &lt;value>`.</param>
+        /// <returns>The same builder.</returns>
         public ExtentBuilder<E> OnUpdate(Expression<Func<E, Boolean>> definition)
         {
             var info = Properties.GetEqualityExpressionInfo(definition);
@@ -489,33 +528,43 @@ namespace Microsoft.EntityFrameworkCore
         /// Loads the entity given by the given entity's key to the given extent.
         /// </summary>
         /// <param name="db">The context.</param>
-        /// <param name="entity">The detached entity the key of which defines what entity to load.</param>
+        /// <param name="entityToLoad">The detached entity the key of which defines what entity to load.</param>
         /// <param name="extent">The extent to which to load the entity.</param>
         /// <returns>The attached entity.</returns>
-        public static async Task<E> LoadExtentAsync<E>(this DbContext db, E entity, Action<ExtentBuilder<E>> extent)
+        public static async Task<E> LoadExtentAsync<E>(this DbContext db, E entityToLoad, Action<ExtentBuilder<E>> extent)
             where E : class
         {
             var builder = new ExtentBuilder<E>();
             extent(builder);
 
-            var oldEntity = await builder.reconcilers
-                .Aggregate(db.GetEntity(entity), (q, r) => r.AugmentInclude(q))
+            var attachedEntity = await builder.reconcilers
+                .Aggregate(db.GetEntity(entityToLoad), (q, r) => r.AugmentInclude(q))
                 .FirstOrDefaultAsync();
 
-            return oldEntity;
+            foreach (var reconciler in builder.reconcilers)
+            {
+                await reconciler.LoadAsync(db, attachedEntity);
+            }
+
+            foreach (var property in builder.properties)
+            {
+                property.Modify(db, attachedEntity, null);
+            }
+
+            return attachedEntity;
         }
 
         /// <summary>
         /// Loads the entity given by the given entity's key to the given extent.
         /// </summary>
         /// <param name="db">The context.</param>
-        /// <param name="entity">The detached entity the key of which defines what entity to load.</param>
+        /// <param name="entityToLoad">The detached entity the key of which defines what entity to load.</param>
         /// <param name="extent">The extent to which to load the entity.</param>
         /// <returns>The attached entity.</returns>
-        public static E LoadExtent<E>(this DbContext db, E entity, Action<ExtentBuilder<E>> extent)
+        public static E LoadExtent<E>(this DbContext db, E entityToLoad, Action<ExtentBuilder<E>> extent)
             where E : class
         {
-            var task = db.LoadExtentAsync(entity, extent);
+            var task = db.LoadExtentAsync(entityToLoad, extent);
             task.Wait();
             return task.Result;
         }
