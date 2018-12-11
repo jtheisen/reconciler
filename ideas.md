@@ -18,7 +18,7 @@ Common is also that collection nav props should come sorted by one of its intege
 
 Deletion is often not literal but semanticly expressed by setting a flag. Reconciler should support that. For example,
 
-    .WithDeletionAs(e => e.DeletedAt = DateTimeOffset.Now)
+    .WithDeletionAs(e => e.DeletedAt == DateTimeOffset.Now)
 
 should mean that
 
