@@ -8,21 +8,11 @@ There's also another feature that Reconciler can do while loading: It can ensure
 
 Factoring out the loading from the reconciliation has also the advantage of allowing all kinds of manual fixes before saving.
 
-### Fixing
+### Order
 
-Sometimes we need to employ certain fixes on nested parts of the graph on saving:
+Common is also that collection nav props should come sorted by one of its integer properties. On reconciliation, that property should be updated for all items:
 
-    .WithIntialFix(e => e.Id = Guid.New())
-    .WithIntialFix(e => e.CreatedAt = DateTimeOffset.Now)
-    .WithFix(e => e.ModifiedAt = DateTimeOffset.Now)
-    .WithFix((e, i) => e.OrderInParent = i)
-
-### Exclude properties
-
-Sometimes some properties should not be updated, and sometimes they shouldn't even be passed to a client on loading:
-
-    .WithReadOnly(e => e.Unmodifiable)
-    .WithBlacked(e => e.Secret)
+    .WithMany(e => e.Tags, t => t.Order)
 
 ### Semantic Deletion
 
