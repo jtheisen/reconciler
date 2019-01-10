@@ -6,7 +6,7 @@ It's somewhat complicated when combined with other features on the road map, in 
 
 There's also another feature that Reconciler can do while loading: It can ensure all navigational properties that are not explicitly mentioned in the extent definition are set to null, so that there are no cycles in the graph. Cycles make it more difficult to serialize, in particular you can't just use plain json.
 
-Factoring out the loading from the reconciliation has also the advantage of allowing all kinds of manual fixes before saving.
+Note that the load of an extent may be less than the load the reconciliation needs to do: The latter also needs to check if certain yet-to-become-related entities that are passed attached to the root already exist, whereas a simple load of an extent needs only to look at the root itself.
 
 ### Order
 
@@ -40,9 +40,29 @@ The cloning feature is a bit different from all the others in that in requires k
 
 ### Key Consistency Requirement Drop
 
-Reconciler currently requires that for all non-null navigational properties, the respective foreign keys need to be set and match - which is something easy to get wrong when done explicitly in a client.
+Reconciler currently requires that for all given nav props values, the respective foreign keys need to be set and match - which is something easy to get wrong when done explicitly in a client:
 
-Ideally we want all foreign key values to be inferred from the given navigational properties.
+```
+new X {
+    YId = yId, // easy to forget to keep in sync...
+    Y = new Y {
+        Id = yId // ...with this!
+    }
+}
+```
+
+We want all foreign key values to be inferred from the given nav prop values, and in fact we also want their absence to indicate a change in the foreign key as well:
+
+```
+new X {
+    YId = yId, // even if the foreign key is non-null here...
+    Y = null // ...this indicates that it should be set to null
+}
+```
+
+Somewhat related to this is that in the case of collection nav props whose values are part of the extent, a null value should simply lead to an exception rather than being interpreted as an empty collection.
+
+All of this also implies a subtle change in semantics.
 
 Also, Setting the `Id` key property as in one of the sample code above can only work on leaves until the Key Consistency Requirement Drop is implemented as well.
 
