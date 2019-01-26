@@ -75,7 +75,9 @@ namespace Reconciler.Tests
             ClearDbSet(db.Addresses);
             ClearDbSet(db.AddressImages);
             ClearDbSet(db.PersonTags);
+            ClearDbSet(db.PersonTagPayloads);
             ClearDbSet(db.Tags);
+            ClearDbSet(db.EmailAddresses);
             db.SaveChanges();
 
             db.Set<E>().Add(entity);
@@ -89,8 +91,10 @@ namespace Reconciler.Tests
 
             public String City { get; set; }
 
+            public List<EmailAddress> EmailsToCopy { get; set; }
+
             public Boolean IncludeAddressImage { get; set; }
-            public Boolean IncldueTagPayload { get; set; }
+            public Boolean IncludeTagPayload { get; set; }
 
             public Predicate<Tag> IncludeTag { get; set; }
         }
@@ -115,11 +119,14 @@ namespace Reconciler.Tests
                     PersonId = personId,
                     TagId = t.Id,
                     Tag = t,
-                    Payload = options?.IncldueTagPayload == true
+                    Payload = options?.IncludeTagPayload == true
                         ? new PersonTagPayload { PersonTagId = id }
                         : null
                 };
             }).Where(t => options?.IncludeTag?.Invoke(t.Tag) ?? false).ToList();
+
+            var emailsToCopy = options?.EmailsToCopy ?? new List<EmailAddress>();
+            var emails = emailsToCopy.Select(e => new EmailAddress { Email = e.Email, PersonId = personId, Id = e.Id }).ToList();
 
             return new Person
             {
@@ -133,8 +140,15 @@ namespace Reconciler.Tests
                         ? new AddressImage { AddressId = addressId }
                         : null
                 },
+                EmailAddresses = emails,
                 Tags = personTags,
             };
+        }
+
+
+        List<EmailAddress> MakeEmailAddresses(int start, int count)
+        {
+            return Enumerable.Range(start, count).Select(i => new EmailAddress { Email = $"test{i}@test.com" }).ToList();
         }
 
         void TestGraph<E>(E original, E target, Action<ExtentBuilder<E>> extent)
@@ -279,7 +293,8 @@ namespace Reconciler.Tests
         [TestMethod]
         public void TestFixes()
         {
-            Action<ExtentBuilder<Person>> GetExtent() {
+            Action<ExtentBuilder<Person>> GetExtent()
+            {
                 return map => map
                     .WithOne(p => p.Address)
                     .OnInsertion(p => p.CreatedAt == DateTimeOffset.Now)
@@ -297,6 +312,47 @@ namespace Reconciler.Tests
 
             Assert.AreEqual(initialPerson.CreatedAt, updatedPerson.CreatedAt);
             Assert.AreNotEqual(initialPerson.ModifiedAt, updatedPerson.ModifiedAt);
+        }
+
+        [TestMethod]
+        public void TestAddManyWithAutoIncrementId()
+        {
+            Action<ExtentBuilder<Person>> extent = map => map.WithMany(p => p.EmailAddresses);
+
+            new Context().ReconcileAndSaveChanges(MakeGraph(new GraphOptions { EmailsToCopy = MakeEmailAddresses(1, 2) }), extent);
+
+            var initialPerson = new Context().LoadExtent(MakeGraph(), extent);
+
+            new Context().ReconcileAndSaveChanges(MakeGraph(new GraphOptions { EmailsToCopy = initialPerson.EmailAddresses.ToList() }), extent);
+
+            var updatedPerson = new Context().LoadExtent(MakeGraph(), extent);
+
+            Assert.AreEqual(updatedPerson.EmailAddresses.Count, 2);
+            AssertGraphEquality(MakeGraph(), initialPerson, updatedPerson);
+
+        }
+
+        [TestMethod]
+        public void TestRemoveAndAddManyWithAutoIncrementId()
+        {
+            Action<ExtentBuilder<Person>> extent = map => map.WithMany(p => p.EmailAddresses);
+
+            new Context().ReconcileAndSaveChanges(MakeGraph(new GraphOptions { EmailsToCopy = MakeEmailAddresses(1, 2) }), extent);
+
+            var initialPerson = new Context().LoadExtent(MakeGraph(), extent);
+            var initialEmails = initialPerson.EmailAddresses.OrderBy(e => e.Email);
+
+            var changedEmails = initialEmails.Skip(1).Concat(MakeEmailAddresses(3, 2)).ToList();
+
+            new Context().ReconcileAndSaveChanges(MakeGraph(new GraphOptions { EmailsToCopy = changedEmails }), extent);
+
+            var updatedPerson = new Context().LoadExtent(MakeGraph(), extent);
+            var updatedEmails = updatedPerson.EmailAddresses.OrderBy(e => e.Email);
+
+            Assert.AreEqual(initialPerson.EmailAddresses.Count, 2);
+            Assert.AreEqual(updatedPerson.EmailAddresses.Count, 3);
+            Assert.AreEqual(changedEmails.First().Id, updatedEmails.First().Id);
+            Assert.IsTrue(Enumerable.SequenceEqual(changedEmails.Select(e => e.Email), updatedEmails.Select(e => e.Email)));
         }
     }
 }

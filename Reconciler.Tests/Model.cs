@@ -22,6 +22,7 @@ namespace Reconciler.Tests
         public Person()
         {
             Tags = new List<PersonTag>();
+            EmailAddresses = new List<EmailAddress>();
         }
 
         public Guid Id { get; set; }
@@ -35,6 +36,8 @@ namespace Reconciler.Tests
         public Address Address { get; set; }
 
         public ICollection<PersonTag> Tags { get; set; }
+
+        public ICollection<EmailAddress> EmailAddresses { get; set; }
     }
 
     [DebuggerDisplay("Id={Id},{PersonId}->{TagId}")]
@@ -88,6 +91,18 @@ namespace Reconciler.Tests
         public String EncodedImageData { get; set; }
     }
 
+    [DebuggerDisplay("Id={Id}")]
+    class EmailAddress
+    {
+        public int Id { get; set; }
+
+        public Guid PersonId { get; set; }
+
+        public Person Person { get; set; }
+
+        public String Email { get; set; }
+    }
+
     class Context : DbContext
     {
         public DbSet<Person> People { get; set; }
@@ -96,6 +111,7 @@ namespace Reconciler.Tests
         public DbSet<PersonTag> PersonTags { get; set; }
         public DbSet<PersonTagPayload> PersonTagPayloads { get; set; }
         public DbSet<Tag> Tags { get; set; }
+        public DbSet<EmailAddress> EmailAddresses { get; set; }
 
 #if EF6
 
@@ -124,8 +140,8 @@ namespace Reconciler.Tests
 #if EFCORE
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            //optionsBuilder.UseSqlServer(@"Data Source=.\;Initial Catalog=reconcilerefcore;Integrated Security=true");
-            optionsBuilder.UseInMemoryDatabase("Reconciler");
+            optionsBuilder.UseSqlServer(@"Data Source=.\;Initial Catalog=reconcilerefcore;Integrated Security=true");
+            //optionsBuilder.UseInMemoryDatabase("Reconciler");
         }
 
         protected override void OnModelCreating(ModelBuilder builder)

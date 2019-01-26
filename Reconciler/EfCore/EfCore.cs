@@ -125,8 +125,10 @@ namespace MonkeyBusters.Reconciliation.Internal
             where E : class
         {
             var newEntity = Activator.CreateInstance(templateEntity.GetType()) as E;
-            db.Set<E>().Add(newEntity);
+
             db.Entry(newEntity).CurrentValues.SetValues(templateEntity);
+            db.Set<E>().Add(newEntity);
+
             return newEntity;
         }
 
