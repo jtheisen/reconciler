@@ -7,7 +7,7 @@
 This library allows you to write
 
 ```
-    await context.ReconcileAsync(personEntitySentFromClient, e => e
+    await context.ReconcileAsync(personSentFromClient, e => e
         .WithOne(p => p.Address)
         .WithMany(p => p.Tags, e2 => e2
             .WithShared(p => p.Tag))
@@ -16,20 +16,20 @@ This library allows you to write
 ```
 
 and it will sync the four respective tables to match the given,
-detached `personSendFromClient` entity by adding, updating and removing
+detached `personSentFromClient` entity by adding, updating and removing
 entities as required.
 
-It's primary use case are updates on retrieving multiple related entities
+Its primary use case are updates on multiple related entities
 retrieved from a client through an API.
 
 It is a replacement for the [`GraphDiff`](https://github.com/zzzprojects/GraphDiff) library.
 
-The EF6 and EFCore versions share the same source code as far as possible
+The EF 6 and EF Core versions share the same source code as far as possible
 to ensure consistency.
 
-## Nuget
+## NuGet
 
-There is one Nuget package for each of the two frameworks:
+There is one NuGet package for each of the two frameworks:
 
 ```
 Install-Package Reconciler.Ef6
@@ -42,7 +42,7 @@ Install-Package Reconciler.EfCore
 ## Definitions
 
 - **Template entities** are the entities to reconcile towards
-  (`personEntitySentFromClient` in the teaser sample)
+  (`personSentFromClient` in the teaser sample)
 - **The extent** is the extent of the subtree rooted in the template entity
   of the first parameter that is to be reconciled as defined by
   the second parameter to the `Reconcile` extension methods.
@@ -55,10 +55,10 @@ The extent definition can also contain certain extra information to help with co
 
 Sometimes we need to employ certain fixes on nested parts of the graph on saving:
 
-    .OnInsertion(e => e.Id = Guid.New())
+    .OnInsertion(e => e.Id == Guid.NewGuid())
     .OnInsertion(e => e.CreatedAt == DateTimeOffset.Now)
     .OnUpdate(e => e.ModifiedAt == DateTimeOffset.Now)
-    .OnUpdate((e, i) => e.OrderInParent == i)
+
 
 The `OnUpdate` definitions apply to insertions as well.
 
@@ -87,7 +87,7 @@ The are some things to be aware of:
   to match the respective navigational properties before the call
   to one of the `Reconcile` overloads is made. For example, it should be that
   `person.AddressId == person.Address.Id` in the unit test's sample model.
-- The extent must represent a subtree, ie. have no cycles, and all
+- The extent must represent a subtree, i.e. have no cycles, and all
   entities must appear only once.
 - The `Reconcile` overloads themselves access the database only
   for reading and thus need to be followed by a `SaveChanges` call.
@@ -114,8 +114,7 @@ and I don't quite know what the difference between associated and owned is.
 
 `Reconciler` has `WithOne`, `WithMany` and `WithShared`:
 
-`WithOne` and
-`WithMany` reconcile a scalar or collection navigational property, respectively,
+`WithOne` and `WithMany` reconcile a scalar or collection navigational property, respectively,
 through respective addition, update and removal operations. `WithShared`
 only works on scalar navigational properties and doesn't remove a formerly
 related entity that is now no longer related. This is useful, for example, in
@@ -124,5 +123,5 @@ needed but don't want to remove them as they may be shared by other entities.
 
 ## Roadmap
 
-There are a number of exiting features that would make this library much
+There are a number of exciting features that would make this library much
 more useful. See [this document](ideas.md) for further information.

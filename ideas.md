@@ -4,7 +4,7 @@ Extent definitions are also suited to be simply loaded - so that the respective 
 
 It's somewhat complicated when combined with other features on the road map, in particular support for inheritance and semantic deletion.
 
-There's also another feature that Reconciler can do while loading: It can ensure all navigational properties that are not explicitly mentioned in the extent definition are set to null, so that there are no cycles in the graph. Cycles make it more difficult to serialize, in particular you can't just use plain json.
+There's also another feature that Reconciler can do while loading: It can ensure all navigational properties that are not explicitly mentioned in the extent definition are set to null, so that there are no cycles in the graph. Cycles make it more difficult to serialize, in particular you can't just use plain JSON.
 
 Note that the load of an extent may be less than the load the reconciliation needs to do: The latter also needs to check if certain yet-to-become-related entities that are passed attached to the root already exist, whereas a simple load of an extent needs only to look at the root itself.
 
@@ -16,7 +16,7 @@ Common is also that collection nav props should come sorted by one of its intege
 
 ### Semantic Deletion
 
-Deletion is often not literal but semanticly expressed by setting a flag. Reconciler should support that. For example,
+Deletion is often not literal but semantically expressed by setting a flag. Reconciler should support that. For example,
 
     .WithDeletionAs(e => e.DeletedAt == DateTimeOffset.Now)
 
@@ -29,14 +29,14 @@ It should be investigated how EF Core's idea of default filters can fit into thi
 
 ### Cloning
 
-Sometimes you need to transplant a persisted graph to a new one, replacing the repective ids with new ones. In my experience that's the kind of logic that always breaks when done in an ad-hoc manner because
+Sometimes you need to transplant a persisted graph to a new one, replacing the respective ids with new ones. In my experience that's the kind of logic that always breaks when done in an ad-hoc manner because
 
 * it needs to be fixed every time some new relationship is added that needs to be cloned as well, but
 * the respective feature needing cloning is often neglected in testing.
 
 This could be avoided by the common loading code sharing the extent definition with the cloning function, using Reconciler to do the cloning.
 
-The cloning feature is a bit different from all the others in that in requires knowledge about the relationship of navigational properties and the foreign keys that represent them - which is difficult in EF6.
+The cloning feature is a bit different from all the others in that it requires knowledge about the relationship of navigational properties and the foreign keys that represent them - which is difficult in EF 6.
 
 ### Key Consistency Requirement Drop
 
@@ -62,9 +62,9 @@ new X {
 
 Somewhat related to this is that in the case of collection nav props whose values are part of the extent, a null value should simply lead to an exception rather than being interpreted as an empty collection.
 
-All of this also implies a subtle change in semantics.
+All of this implies a subtle change in semantics.
 
-Also, Setting the `Id` key property as in one of the sample code above can only work on leaves until the Key Consistency Requirement Drop is implemented as well.
+Also, setting the `Id` key property as in one of the sample code above can only work on leaves until the Key Consistency Requirement Drop is implemented.
 
 ### Inheritance support
 
