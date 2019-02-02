@@ -60,6 +60,7 @@ namespace Reconciler.Tests
 #if EFCORE
             new Context().Database.EnsureCreated();
 #endif
+            ClearDb();
         }
 
         void ClearDbSet<T>(DbSet<T> set) where T : class
@@ -67,8 +68,7 @@ namespace Reconciler.Tests
             set.RemoveRange(set.ToArray());
         }
 
-        void PrepareDbWithGraph<E>(E entity)
-            where E : class
+        void ClearDb()
         {
             var db = new Context();
             ClearDbSet(db.People);
@@ -79,9 +79,13 @@ namespace Reconciler.Tests
             ClearDbSet(db.Tags);
             ClearDbSet(db.EmailAddresses);
             db.SaveChanges();
+        }
 
+        void SaveGraph<E>(E entity)
+            where E : class
+        {
+            var db = new Context();
             db.Set<E>().Add(entity);
-
             db.SaveChanges();
         }
 
@@ -162,11 +166,13 @@ namespace Reconciler.Tests
         void TestGraph<E>(E original, E target, Action<ExtentBuilder<E>> extent, out E reloadedTarget, out E reloadedUpdate)
             where E : class
         {
-            PrepareDbWithGraph(target);
+            SaveGraph(target);
 
             reloadedTarget = new Context().LoadExtent(target, extent);
 
-            PrepareDbWithGraph(original);
+            ClearDb();
+
+            SaveGraph(original);
 
             {
                 var db = new Context();
@@ -242,11 +248,12 @@ namespace Reconciler.Tests
         public void TestRemoveAndAddManyWithNestedStuffAttached()
         {
             TestGraph(
-                MakeGraph(new GraphOptions { IncludeTag = t => t.No % 2 == 0 }),
-                MakeGraph(new GraphOptions { IncludeTag = t => t.No % 3 == 0 }),
+                MakeGraph(new GraphOptions { IncludeTag = t => t.No % 2 == 0, IncludeTagPayload = true }),
+                MakeGraph(new GraphOptions { IncludeTag = t => t.No % 3 == 0, IncludeTagPayload = true }),
                 map => map
                     .WithOne(p => p.Address)
                     .WithMany(p => p.Tags, with => with
+                        .WithOne(e => e.Payload)
                         .WithShared(e => e.Tag))
             );
         }
@@ -271,7 +278,7 @@ namespace Reconciler.Tests
         {
             var graph = MakeGraph(new GraphOptions { City = "Bochum" });
 
-            PrepareDbWithGraph(graph);
+            SaveGraph(graph);
 
             Action<ExtentBuilder<Person>> GetExtent()
             {
@@ -317,7 +324,8 @@ namespace Reconciler.Tests
         [TestMethod]
         public void TestAddManyWithAutoIncrementId()
         {
-            Action<ExtentBuilder<Person>> extent = map => map.WithMany(p => p.EmailAddresses);
+            Action<ExtentBuilder<Person>> extent = map => map.WithOne(p => p.Address)
+                                                             .WithMany(p => p.EmailAddresses);
 
             new Context().ReconcileAndSaveChanges(MakeGraph(new GraphOptions { EmailsToCopy = MakeEmailAddresses(1, 2) }), extent);
 
@@ -335,7 +343,8 @@ namespace Reconciler.Tests
         [TestMethod]
         public void TestRemoveAndAddManyWithAutoIncrementId()
         {
-            Action<ExtentBuilder<Person>> extent = map => map.WithMany(p => p.EmailAddresses);
+            Action<ExtentBuilder<Person>> extent = map => map.WithOne(p => p.Address)
+                                                             .WithMany(p => p.EmailAddresses);
 
             new Context().ReconcileAndSaveChanges(MakeGraph(new GraphOptions { EmailsToCopy = MakeEmailAddresses(1, 2) }), extent);
 
