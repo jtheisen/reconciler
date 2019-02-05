@@ -12,9 +12,9 @@ This isn't because of what they do, it's because they came up when Object Orient
 
 Think of the "stereo", the major feature of which certainly isn't that it's stereo, but that it makes sound, be that in mono, stereo or 5.1. Yet it's still just called stereo.
 
-Regrettably the name isn't where the homage to OOP ended, and so basically all ORMs offer the possibility to map a class hierachy on to one or more database tables.
+Regrettably the name isn't where the homage to OOP ended, and so basically all ORMs offer the possibility to map a class hierarchy on to one or more database tables.
 
-While it's not obvious at first glance why that is a bad idea, what is clear at first glance is that mapping tables to hierachies isn't _the most essential thing_ ORMs do: The most essential thing is that they simply provide a decent interface to databases - that themselves all ship only with very rudimentary APIs, which not only aren't type safe, they expect you to send queries in a textual format.
+While it's not obvious at first glance why that is a bad idea, what is clear at first glance is that mapping tables to hierarchies isn't _the most essential thing_ ORMs do: The most essential thing is that they simply provide a decent interface to databases - that themselves all ship only with very rudimentary APIs, which not only aren't type safe, they expect you to send queries in a textual format.
 
 So if we start from the desire for a decent database access layer, what we should wish to aim for first is to reflect all concepts that are _known to SQL_, as such faithfulness will minimize conceptual impedance. And of course inheritance is unknown to SQL, as are many-to-many-relationships.
 
@@ -60,4 +60,4 @@ Forgoing inheritance, these issues go away:
     }
 ```
 
-(This is probablem is less of an issue in clients using type unsafe languages such as plain Javascript as then you're probably checking the `$type` property inside an `if` statement directly. It is a complication with typesafe clients that are generated from the model, however, such as `nswag` for the .NET/TypeScript ecosystem.)
+(This is less of an issue in clients using type-unsafe languages such as plain Javascript as then you're probably checking the `$type` property inside an `if` statement directly. It is a complication with typesafe clients that are generated from the model, however, such as `NSwag` for the .NET/TypeScript ecosystem.)
