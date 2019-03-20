@@ -38,6 +38,10 @@ This could be avoided by the common loading code sharing the extent definition w
 
 The cloning feature is a bit different from all the others in that it requires knowledge about the relationship of navigational properties and the foreign keys that represent them - which is difficult in EF 6.
 
+### Merging
+
+Similar to cloning is the task of taking all entities in all specified collection nav props from one entity, the merge source, and reroot them to another, the merge target.
+
 ### Key Consistency Requirement Drop
 
 Reconciler currently requires that for all given nav props values, the respective foreign keys need to be set and match - which is something easy to get wrong when done explicitly in a client:
