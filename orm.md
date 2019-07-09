@@ -2,7 +2,7 @@
 
 Reconciler isn't going to support either many-to-many relationships or inheritance unless a third-party contributes those features due to my lack of desire to use these features myself.
 
-In fact, I don't think those features should be in ORMs to begin with, and I explain in the following text
+In fact, I don't think those features should be in ORMs to begin with, and I explain why in the following text.
 
 ## ORMs
 
