@@ -12,6 +12,7 @@ using System.Data.Entity;
 
 #if EFCORE
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 #endif
 
 namespace Reconciler.Tests
@@ -138,6 +139,12 @@ namespace Reconciler.Tests
 #endif
 
 #if EFCORE
+        public Context()
+        {
+            ChangeTracker.CascadeDeleteTiming = CascadeTiming.OnSaveChanges;
+            ChangeTracker.DeleteOrphansTiming = CascadeTiming.OnSaveChanges;
+        }
+
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
             optionsBuilder.UseSqlServer(@"Data Source=.\;Initial Catalog=reconcilerefcore;Integrated Security=true");
