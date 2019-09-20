@@ -499,7 +499,7 @@ namespace Microsoft.EntityFrameworkCore
                     .FirstOrDefault();
             }
 
-            var isNewEntity = attachedEntity == null;
+            var isNewEntity = attachedEntity == null || db.Entry(attachedEntity).State == EntityState.Deleted;
 
             if (isNewEntity)
             {
