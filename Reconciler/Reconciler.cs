@@ -500,7 +500,7 @@ namespace Microsoft.EntityFrameworkCore
             }
 
             var isNewEntity = attachedEntity == null || (db.Entry(attachedEntity).State == EntityState.Deleted && templateEntity != null);
-
+            
             if (isNewEntity)
             {
                 attachedEntity = db.AddEntity(templateEntity);
