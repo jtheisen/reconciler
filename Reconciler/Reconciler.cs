@@ -121,7 +121,7 @@ namespace MonkeyBusters.Reconciliation.Internal
             var toRemove = (
                 from o in attachedCollection
                 join n in templateCollection on db.GetEntityKey(o) equals db.GetEntityKey(n) into news
-                where news.Count() == 0
+                where news.Count() == 0 && db.Entry(o)?.State != EntityState.Deleted
                 select o
             ).ToArray();
 
@@ -499,8 +499,8 @@ namespace Microsoft.EntityFrameworkCore
                     .FirstOrDefault();
             }
 
-            var isNewEntity = attachedEntity == null || db.Entry(attachedEntity).State == EntityState.Deleted;
-
+            var isNewEntity = attachedEntity == null || (db.Entry(attachedEntity).State == EntityState.Deleted && templateEntity != null);
+            
             if (isNewEntity)
             {
                 attachedEntity = db.AddEntity(templateEntity);
