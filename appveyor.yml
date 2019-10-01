@@ -1,6 +1,6 @@
 environment:
-  version: 0.2.4
-  versionSuffix:
+  version: 0.2.5
+  versionSuffix: rc1
   appveyor: true
 
 image: Visual Studio 2017
