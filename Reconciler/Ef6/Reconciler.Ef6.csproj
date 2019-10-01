@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+  </PropertyGroup>
+  
+  <PropertyGroup>
     <DefineConstants>EF6</DefineConstants>
   </PropertyGroup>
 
