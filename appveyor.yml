@@ -8,7 +8,7 @@ image: Visual Studio 2019
 services: mssql2017
 
 init:
-- ps: $env:buildVersion = "$env:version$env:versionSuffix.$env:appveyor_build_number"
+- ps: $env:buildVersion = "$env:version.$env:appveyor_build_number"
 - ps: $env:nugetVersion = "$env:version$env:versionSuffix"
 - ps: Update-AppveyorBuild -Version $env:buildVersion
 
