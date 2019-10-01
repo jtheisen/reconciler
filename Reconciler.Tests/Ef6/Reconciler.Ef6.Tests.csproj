@@ -91,7 +91,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Reconciler\Ef6\Reconciler.Ef6.csproj">
-      <Project>{234c7750-c0f7-488b-b240-870244f39e1d}</Project>
+      <Project>{4a1627cd-70c3-47c0-b3e4-c094a1616c4a}</Project>
       <Name>Reconciler.Ef6</Name>
     </ProjectReference>
   </ItemGroup>
