@@ -5,10 +5,6 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <VersionPrefix></VersionPrefix>
-  </PropertyGroup>
-
-  <PropertyGroup>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
   </PropertyGroup>
   
