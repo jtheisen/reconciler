@@ -39,6 +39,8 @@ Install-Package Reconciler.Ef6
 Install-Package Reconciler.EfCore
 ```
 
+The EF6 version also has a prerelease package that targets netstandard2.1 and EF6.3 for use with .NET Core.
+
 ## Definitions
 
 - **Template entities** are the entities to reconcile towards
