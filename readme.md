@@ -79,6 +79,10 @@ The are some things to be aware of:
 
 - I'm using the library in production, but that doesn't mean
   it's mature. The test suite is thin and you may hit issues.
+- I don't use database-generated keys in my own applications (I
+  prefer application-generated uuids over database-generated
+  integer sequences). Reconciler has not been tested with
+  database-generated keys and there may be issues.
 - Specifying relationships on derived classes in models
   with inheritance is not supported.
 - Using entities that are part of an inheritance hierarchy
