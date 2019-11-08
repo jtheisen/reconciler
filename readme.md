@@ -2,6 +2,9 @@
 
 [![Build status](https://ci.appveyor.com/api/projects/status/4qjaph7n7hpptso7/branch/master?svg=true)](https://ci.appveyor.com/project/jtheisen/reconciler/branch/master)
 
+> **Warning:** This library is unmaintained. I was motivated to create this initial effort, but I want to be upfront
+> with any potential user that I won't develop it any further.
+
 ## Teaser
 
 This library allows you to write
