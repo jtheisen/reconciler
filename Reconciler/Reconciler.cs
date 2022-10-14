@@ -69,16 +69,16 @@ namespace MonkeyBusters.Reconciliation.Internal
             }
             else
             {
+                if (templateEntity != null)
+                {
+                    await db.ReconcileAsync(templateEntity, extent);
+                }
+
                 if (attachedEntity != null && removeOrphans)
                 {
                     await db.ReconcileAsync(attachedEntity, null, extent);
 
                     db.RemoveEntity(attachedEntity);
-                }
-
-                if (templateEntity != null)
-                {
-                    await db.ReconcileAsync(templateEntity, extent);
                 }
             }
         }
@@ -381,6 +381,8 @@ namespace MonkeyBusters.Reconciliation.Internal
         public static void Normalize<E>(this DbContext db, E entity, Action<ExtentBuilder<E>> extent)
             where E : class
         {
+            if (entity == null) throw new Exception("Entity shouldn't be null");
+
             var builder = new ExtentBuilder<E>();
             extent?.Invoke(builder);
             foreach (var reconciler in builder.reconcilers)
@@ -506,10 +508,11 @@ namespace Microsoft.EntityFrameworkCore
                 attachedEntity = db.AddEntity(templateEntity);
             }
 
-            foreach (var reconciler in builder.reconcilers)
-            {
-                await reconciler.ReconcileAsync(db, attachedEntity, templateEntity);
-            }
+            // Newer versions of EF Core need the new key values of a replaced related entity
+            // set before the old one is deleted (if it's deleted in the same change set); however,
+            // we need to preserve the old nav props for the recursive reconciliation work we now have
+            // do do after.
+            var cloneOfAttachedEntity = Properties.CloneEntity(attachedEntity);
 
             if (!isNewEntity && templateEntity != null)
             {
@@ -519,6 +522,11 @@ namespace Microsoft.EntityFrameworkCore
             foreach (var property in builder.properties)
             {
                 property.Modify(db, attachedEntity, templateEntity);
+            }
+
+            foreach (var reconciler in builder.reconcilers)
+            {
+                await reconciler.ReconcileAsync(db, cloneOfAttachedEntity, templateEntity);
             }
 
             return attachedEntity;
@@ -632,6 +640,21 @@ namespace Microsoft.EntityFrameworkCore
             {
                 throw new ArgumentException("Binary expression is supposed to be of the form 'e => e.<Property> == <expr>");
             }
+        }
+
+        internal static E CloneEntity<E>(E entity)
+            where E : class
+        {
+            var type = typeof(E);
+
+            var clone = (E)Activator.CreateInstance(type);
+
+            foreach (var property in type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
+            {
+                property.SetValue(clone, property.GetValue(entity));
+            }
+
+            return clone;
         }
     }
 }

@@ -207,6 +207,27 @@ namespace Reconciler.Tests
         }
 
         [TestMethod]
+        public void TestPrematureCascading()
+        {
+            SaveGraph(MakeGraph());
+
+            var db = new Context();
+
+            var person = db.People.Include(p => p.Address).Single();
+
+            var oldAddress = person.Address;
+            var address = new Address { Id = Guid.NewGuid(), City = "foo" };
+            //person.Address = address;
+            db.Addresses.Add(address);
+            person.AddressId = address.Id;
+            db.Addresses.Remove(oldAddress);
+
+            db.SaveChanges();
+
+            person = db.People.Single();
+        }
+
+        [TestMethod]
         public void TestRemoveAndAddOne()
         {
             TestGraph(
