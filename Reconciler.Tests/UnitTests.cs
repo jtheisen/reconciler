@@ -217,8 +217,11 @@ namespace Reconciler.Tests
 
             var oldAddress = person.Address;
             var address = new Address { Id = Guid.NewGuid(), City = "foo" };
-            //person.Address = address;
             db.Addresses.Add(address);
+            // This needs to happen before the removal in newer versions of
+            // EF Core (it was not necessary in 2.1 but is in 6.0).
+            // This test is just to produce the issue by putting the assignment
+            // after the following removal.
             person.AddressId = address.Id;
             db.Addresses.Remove(oldAddress);
 

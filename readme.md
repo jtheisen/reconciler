@@ -2,8 +2,20 @@
 
 [![Build status](https://ci.appveyor.com/api/projects/status/4qjaph7n7hpptso7/branch/master?svg=true)](https://ci.appveyor.com/project/jtheisen/reconciler/branch/master)
 
-> **Warning:** This library is unmaintained. I was motivated to create this initial effort, but I want to be upfront
-> with any potential user that I won't develop it any further.
+> **Warning:** This library is unmaintained. I was motivated to create
+> this initial effort, but I want to be upfront
+> with any potential users that I won't develop it any further.
+> (Last small maintenance was 10/2022 upgrading to EF6/.NET6 with version 0.3;
+> the previous releases did not work at all under .NET6 and threw a runtime error)
+
+> **Warning:** The EF Core variant in versions prior to 0.3 on .NET Core became
+> buggy with a change in semantics of later EF Core releases.
+> I don't know with exactly which
+> release of EF Core this issue manifested, but under certain circumstances you
+> would delete more entities than you asked for. The test suite shows this and
+> since 0.3 this is fixed. I recommend not using the earlier versions unless you're
+> sure your version of EF Core passes the test suite - I only know for sure that
+> EF Core 2.1 does.
 
 ## Teaser
 
