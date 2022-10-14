@@ -3,7 +3,7 @@ environment:
   versionSuffix:
   appveyor: true
 
-image: Visual Studio 2019
+image: Visual Studio 2022
 
 services: mssql2017
 
