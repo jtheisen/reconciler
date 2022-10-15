@@ -337,6 +337,8 @@ namespace Reconciler.Tests
 
             var initialPerson = new Context().LoadExtent(MakeGraph(), GetExtent());
 
+            Thread.Sleep(10);
+
             new Context().ReconcileAndSaveChanges(MakeGraph(), GetExtent());
 
             var updatedPerson = new Context().LoadExtent(MakeGraph(), GetExtent());
