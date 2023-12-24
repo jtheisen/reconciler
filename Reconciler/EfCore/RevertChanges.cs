@@ -184,7 +184,7 @@ The respective entity types and their properties are:
                         break;
                     case EntityState.Deleted:
                     case EntityState.Modified:
-                        entry.CurrentValues.SetValues(entry.OriginalValues);
+                        entry.State = EntityState.Modified;
                         entry.State = EntityState.Unchanged;
                         break;
                     default:
@@ -202,16 +202,14 @@ The respective entity types and their properties are:
                 switch (entry.State)
                 {
                     case EntityState.Deleted:
-                        // It could still be also modified.
-                        entry.CurrentValues.SetValues(entry.OriginalValues);
-
+                        // This way, EF reverts the changes even for deleted entities.
+                        entry.State = EntityState.Modified;
                         entry.State = EntityState.Unchanged;
 
                         // No collections need to change as that is done by EF only on successful deletion at SaveChanges.
 
                         break;
                     case EntityState.Modified:
-                        entry.CurrentValues.SetValues(entry.OriginalValues);
                         entry.State = EntityState.Unchanged;
 
                         break;
