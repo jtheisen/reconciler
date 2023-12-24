@@ -1,4 +1,5 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
+using MonkeyBusters.EntityFramework;
 
 #nullable enable
 
@@ -108,35 +109,43 @@ public class RevertChangesTests
     });
 
     [TestMethod]
-    public void TestMissingNavProp() => TestRevert((db, check, revert) =>
+    public void TestMissingNavProp()
     {
-        var company = new Company
+        var isBeforeEf7 = Extensions.GetEfMajorVersion() < 7;
+
+        TestRevert((db, check, revert) =>
         {
-            Id = Guid.NewGuid(),
-        };
-
-        db.Companies.Add(company);
-
-        check();
-
-        var contactToAdd = new ContactNoNavProp { Id = Guid.NewGuid(), CompanyId = company.Id };
-
-        db.Contacts.Add(contactToAdd);
-
-        // Reverting an entity with a missing scalar nav prop is not supported.
-        revert();
-
-        // Consequently, this fails:
-        Assert.ThrowsException<Exception>(() =>
-        {
-            // Check that it's no longer the case after reverting
-            if (company.Contacts.ToList().Contains(contactToAdd))
+            var company = new Company
             {
-                throw new Exception("The contact should no longer be here");
+                Id = Guid.NewGuid(),
+            };
+
+            db.Companies.Add(company);
+
+            check();
+
+            var contactToAdd = new ContactNoNavProp { Id = Guid.NewGuid(), CompanyId = company.Id };
+
+            db.Contacts.Add(contactToAdd);
+
+            // Reverting an entity with a missing scalar nav prop is not supported.
+            revert();
+
+            if (isBeforeEf7)
+            {
+                // Consequently, this fails: (except on EF7 and higher)
+                Assert.ThrowsException<Exception>(() =>
+                {
+                    // Check that it's no longer the case after reverting
+                    if (company.Contacts.ToList().Contains(contactToAdd))
+                    {
+                        throw new Exception("The contact should no longer be here");
+                    }
+                });
             }
-        });
-    },
-        expectTheUnexpected: true);
+        },
+        expectTheUnexpected: isBeforeEf7);
+    }
 
     void MakeInvoiceCollection(out InvoiceCollection invoices, out Invoice invoice, out InvoicePosition invoicePosition)
     {

@@ -18,7 +18,9 @@
 
   <ItemGroup>
     <Compile Include="..\..\Model.cs" Link="Model.cs" />
-    <Compile Include="..\..\UnitTests.cs" Link="UnitTests.cs" />
+	<Compile Include="..\..\UnitTests.cs" Link="UnitTests.cs" />
+	<Compile Include="..\..\RevertChangesTestModel.cs" Link="RevertChangesTestModel.cs" />
+	<Compile Include="..\..\RevertChangesTests.cs" Link="RevertChangesTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

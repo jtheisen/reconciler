@@ -100,6 +100,19 @@ The respective entity types and their properties are:
 
     public static class Extensions
     {
+        static Int32 efMajorVersion = 0;
+
+        public static Int32 GetEfMajorVersion()
+        {
+            if (efMajorVersion > 0) return efMajorVersion;
+            
+            var version = typeof(DbContext).Assembly.GetName().Version;
+
+            efMajorVersion = version?.Major ?? 6;
+
+            return efMajorVersion;
+        }
+
         /// <summary>
         /// Check whether the given context has the corresponding scalar nav prop
         /// to each collection nav prop. This is required by `RevertChanges`.
@@ -147,6 +160,40 @@ The respective entity types and their properties are:
         /// </summary>
         /// <param name="context">The context to revert.</param>
         public static void RevertChanges(this DbContext context)
+        {
+            var v = GetEfMajorVersion();
+
+            if (v >= 7)
+            {
+                context.RevertChangesEf7();
+            }
+            else
+            {
+                context.RevertChangesEf6();
+            }
+        }
+
+        static void RevertChangesEf7(this DbContext context)
+        {
+            foreach (var entry in context.ChangeTracker.Entries().ToArray())
+            {
+                switch (entry.State)
+                {
+                    case EntityState.Added:
+                        entry.State = EntityState.Detached;
+                        break;
+                    case EntityState.Deleted:
+                    case EntityState.Modified:
+                        entry.CurrentValues.SetValues(entry.OriginalValues);
+                        entry.State = EntityState.Unchanged;
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+
+        static void RevertChangesEf6(this DbContext context)
         {
             context.CheckContextForOnlyNavPropsOnce();
 
