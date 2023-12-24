@@ -14,7 +14,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Reconciler.EfCore", "Reconciler\EfCore\Reconciler.EfCore.csproj", "{16A20187-B4E6-412E-A92B-1F5675CF240C}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Reconciler.EfCore.Tests", "Reconciler.Tests\EfCore\Reconciler.EfCore.Tests.csproj", "{21653FC2-0980-4F29-AE3A-089D5BE1C9CB}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Reconciler.EfCore.Tests.Dotnet6", "Reconciler.Tests\EfCore\Dotnet6\Reconciler.EfCore.Tests.Dotnet6.csproj", "{21653FC2-0980-4F29-AE3A-089D5BE1C9CB}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Reconciler.EfCore.Tests.Latest", "Reconciler.Tests\EfCore\Latest\Reconciler.EfCore.Tests.Latest.csproj", "{16A4F545-CA81-49F2-8BB1-15D6F3AE98E4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -38,6 +40,10 @@ Global
 		{21653FC2-0980-4F29-AE3A-089D5BE1C9CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{21653FC2-0980-4F29-AE3A-089D5BE1C9CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{21653FC2-0980-4F29-AE3A-089D5BE1C9CB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{16A4F545-CA81-49F2-8BB1-15D6F3AE98E4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{16A4F545-CA81-49F2-8BB1-15D6F3AE98E4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{16A4F545-CA81-49F2-8BB1-15D6F3AE98E4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{16A4F545-CA81-49F2-8BB1-15D6F3AE98E4}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

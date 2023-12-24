@@ -140,7 +140,7 @@ namespace Reconciler.Tests
 #if EFCORE
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            optionsBuilder.UseSqlServer(@"Data Source=.\;Initial Catalog=reconcilerefcore;Integrated Security=true");
+            optionsBuilder.UseSqlServer(@"Data Source=.\;Initial Catalog=reconcilerefcore;Integrated Security=true;TrustServerCertificate=True");
             //optionsBuilder.UseInMemoryDatabase("Reconciler");
         }
 

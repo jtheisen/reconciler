@@ -6,64 +6,74 @@ using Microsoft.EntityFrameworkCore;
 
 #nullable enable
 
-public abstract class CollectionHelper
+namespace MonkeyBusters.EntityFramework
 {
-    protected abstract void AddOrRemove(IEnumerable collection, Object entity, Boolean actuallyAdd);
-
-    public abstract Boolean IsCollectionT(IEnumerable? collection);
-
-    public static void AddOrRemove(IEnumerable? collection, Object entity, Type type, Boolean actuallyAdd, Boolean throwIfTypeMismatch = false)
+    internal abstract class CollectionHelper
     {
-        var helper = Get(type);
+        protected abstract void AddOrRemove(IEnumerable collection, Object entity, Boolean actuallyAdd);
 
-        if (helper.IsCollectionT(collection))
+        public abstract Boolean IsCollectionT(IEnumerable? collection);
+
+        public static void AddOrRemove(IEnumerable? collection, Object entity, Type type, Boolean actuallyAdd, Boolean throwIfTypeMismatch = false)
         {
-            helper.AddOrRemove(collection, entity, actuallyAdd);
+            var helper = Get(type);
+
+            if (helper.IsCollectionT(collection))
+            {
+                helper.AddOrRemove(collection, entity, actuallyAdd);
+            }
+            else if (throwIfTypeMismatch)
+            {
+                throw new ArgumentException($"Enumerable type {collection.GetType()} was expected to be a ICollection<{type}>");
+            }
         }
-        else if (throwIfTypeMismatch)
+
+        static CollectionHelper Create(Type type)
         {
-            throw new ArgumentException($"Enumerable type {collection.GetType()} was expected to be a ICollection<{type}>");
+            var genericType = typeof(CollectionHelper<>).MakeGenericType(type);
+
+            return Activator.CreateInstance(genericType) as CollectionHelper ?? throw new Exception("Activation failed");
+        }
+
+        static ConcurrentDictionary<Type, CollectionHelper> helpers = new ConcurrentDictionary<Type, CollectionHelper>();
+
+        static CollectionHelper Get(Type type) => helpers.GetOrAdd(type, Create);
+    }
+
+    internal class CollectionHelper<T> : CollectionHelper
+    {
+        public override Boolean IsCollectionT(IEnumerable? collection) => collection is ICollection<T>;
+
+        protected override void AddOrRemove(IEnumerable collection, Object entity, Boolean actuallyAdd)
+        {
+            if (collection is not ICollection<T> target) throw new ArgumentException($"Enumerable type {collection.GetType()} was expected to be a ICollection<{typeof(T)}>");
+
+            if (entity is not T item) throw new ArgumentException($"Entity of type {entity.GetType()} was expected to be a {typeof(T)}");
+
+            if (actuallyAdd)
+            {
+                target.Add(item);
+            }
+            else
+            {
+                target.Remove(item);
+            }
         }
     }
 
-    static CollectionHelper Create(Type type)
+    /// <summary>
+    /// This exception is thrown when the only-nav-props-test fails. Set it's static IsEnabled
+    /// property to false to prevent it from being thrown automatically on a call to `RevertChanges`.
+    /// </summary>
+    public class DbContextHasOnlyNavPropsAdvisoryException : Exception
     {
-        var genericType = typeof(CollectionHelper<>).MakeGenericType(type);
+        /// <summary>
+        /// If set to false, `RevertChanges` will no longer throw an exception if it
+        /// deems the context type problematic.
+        /// </summary>
+        public static Boolean IsEnabled { get; set; } = true;
 
-        return Activator.CreateInstance(genericType) as CollectionHelper ?? throw new Exception("Activation failed");
-    }
-
-    static ConcurrentDictionary<Type, CollectionHelper> helpers = new ConcurrentDictionary<Type, CollectionHelper>();
-
-    static CollectionHelper Get(Type type) => helpers.GetOrAdd(type, Create);
-}
-
-public class CollectionHelper<T> : CollectionHelper
-{
-    public override Boolean IsCollectionT(IEnumerable? collection) => collection is ICollection<T>;
-
-    protected override void AddOrRemove(IEnumerable collection, Object entity, Boolean actuallyAdd)
-    {
-        if (collection is not ICollection<T> target) throw new ArgumentException($"Enumerable type {collection.GetType()} was expected to be a ICollection<{typeof(T)}>");
-
-        if (entity is not T item) throw new ArgumentException($"Entity of type {entity.GetType()} was expected to be a {typeof(T)}");
-
-        if (actuallyAdd)
-        {
-            target.Add(item);
-        }
-        else
-        {
-            target.Remove(item);
-        }
-    }
-}
-
-public class DbContextHasOnlyNavPropsAdvisoryException : Exception
-{
-    public static Boolean IsEnabled { get; set; } = true;
-
-    const String message = @"
+        const String message = @"
 Your DbContext has entity types with collection navigation properties
 that don't have a corresponding scalar navigation property on the related
 entity. This is required for RevertChanges to work properly.
@@ -82,98 +92,111 @@ The respective entity types and their properties are:
 
 ";
 
-    internal DbContextHasOnlyNavPropsAdvisoryException(String report)
-        : base(message + report)
-    {
-    }
-}
-
-public static class Extensions
-{
-    public static String CheckContextForOnlyNavProps(this DbContext context, Boolean throwOnIssue = false)
-    {
-        var onlyNavProps =
-            from t in context.Model.GetEntityTypes()
-            from n in t.GetNavigations()
-            where n.IsCollection && n.Inverse is null
-            select $"{t.ShortName()}.{n.Name}";
-
-        var report = String.Join("\n", onlyNavProps);
-
-        if (throwOnIssue)
+        internal DbContextHasOnlyNavPropsAdvisoryException(String report)
+            : base(message + report)
         {
-            throw new DbContextHasOnlyNavPropsAdvisoryException(report);
         }
-
-        return report;
     }
 
-    static Boolean oneContextChecked = false;
-
-    static void CheckContextForOnlyNavPropsOnce(this DbContext context)
+    public static class Extensions
     {
-        // For efficiency reasons, we only check for the first context RevertChanges is
-        // called on and only if a debugger is attached. This should create enough attention
-        // without causing issues.
-
-        if (!oneContextChecked && DbContextHasOnlyNavPropsAdvisoryException.IsEnabled && Debugger.IsAttached)
+        /// <summary>
+        /// Check whether the given context has the corresponding scalar nav prop
+        /// to each collection nav prop. This is required by `RevertChanges`.
+        /// </summary>
+        /// <param name="context">The context to check.</param>
+        /// <param name="throwOnIssue">Throw if the check fails.</param>
+        /// <returns>A string containing the "only" collection nav props.</returns>
+        /// <exception cref="DbContextHasOnlyNavPropsAdvisoryException"></exception>
+        public static String CheckContextForOnlyNavProps(this DbContext context, Boolean throwOnIssue = false)
         {
-            context.CheckContextForOnlyNavProps(throwOnIssue: true);
-        }
+            var onlyNavProps =
+                from t in context.Model.GetEntityTypes()
+                from n in t.GetNavigations()
+                where n.IsCollection && n.Inverse is null
+                select $"{t.ShortName()}.{n.Name}";
 
-        oneContextChecked = true;
-    }
+            var report = String.Join("\n", onlyNavProps);
 
-    public static void RevertChanges(this DbContext context)
-    {
-        context.CheckContextForOnlyNavPropsOnce();
-
-        foreach (var entry in context.ChangeTracker.Entries().ToArray())
-        {
-            switch (entry.State)
+            if (throwOnIssue)
             {
-                case EntityState.Deleted:
-                    // It could still be also modified.
-                    entry.CurrentValues.SetValues(entry.OriginalValues);
+                throw new DbContextHasOnlyNavPropsAdvisoryException(report);
+            }
 
-                    entry.State = EntityState.Unchanged;
+            return report;
+        }
 
-                    // No collections need to change as that is done by EF only on successful deletion at SaveChanges.
+        static Boolean oneContextChecked = false;
 
-                    break;
-                case EntityState.Modified:
-                    entry.CurrentValues.SetValues(entry.OriginalValues);
-                    entry.State = EntityState.Unchanged;
+        static void CheckContextForOnlyNavPropsOnce(this DbContext context)
+        {
+            // For efficiency reasons, we only check for the first context RevertChanges is
+            // called on and only if a debugger is attached. This should create enough attention
+            // without causing issues.
 
-                    break;
-                case EntityState.Added:
-                    // Only in this case do collection need changing: EF modifies collections prior to SaveChanges'
-                    // successful completion and those changes need reverting. The following will only work if
-                    // all collection nav props have a corresponding scalar nav prop on the other end.
+            if (!oneContextChecked && DbContextHasOnlyNavPropsAdvisoryException.IsEnabled && Debugger.IsAttached)
+            {
+                context.CheckContextForOnlyNavProps(throwOnIssue: true);
+            }
 
-                    // Bizarrely, in the case of a missing scalar nav prop, entry.Navigations just as much missing
-                    // the relationship entry as entry.References is. There's no easy way to check for this case.
+            oneContextChecked = true;
+        }
 
-                    foreach (var reference in entry.References)
-                    {
-                        var nav = reference.Metadata;
+        /// <summary>
+        /// Reverts properties of all tracked entities to their unmodified state.
+        /// </summary>
+        /// <param name="context">The context to revert.</param>
+        public static void RevertChanges(this DbContext context)
+        {
+            context.CheckContextForOnlyNavPropsOnce();
 
-                        if (nav.Inverse?.PropertyInfo is not PropertyInfo relatedProperty) continue;
+            foreach (var entry in context.ChangeTracker.Entries().ToArray())
+            {
+                switch (entry.State)
+                {
+                    case EntityState.Deleted:
+                        // It could still be also modified.
+                        entry.CurrentValues.SetValues(entry.OriginalValues);
 
-                        if (reference.CurrentValue is not Object relatedObject) continue;
+                        entry.State = EntityState.Unchanged;
 
-                        var collectionObject = relatedProperty.GetValue(relatedObject);
+                        // No collections need to change as that is done by EF only on successful deletion at SaveChanges.
 
-                        CollectionHelper.AddOrRemove(collectionObject as IEnumerable, entry.Entity, entry.Metadata.ClrType, false, true);
-                    }
+                        break;
+                    case EntityState.Modified:
+                        entry.CurrentValues.SetValues(entry.OriginalValues);
+                        entry.State = EntityState.Unchanged;
 
-                    entry.State = EntityState.Detached;
+                        break;
+                    case EntityState.Added:
+                        // Only in this case do collection need changing: EF modifies collections prior to SaveChanges'
+                        // successful completion and those changes need reverting. The following will only work if
+                        // all collection nav props have a corresponding scalar nav prop on the other end.
 
-                    break;
-                case EntityState.Detached:
-                case EntityState.Unchanged:
-                default:
-                    break;
+                        // Bizarrely, in the case of a missing scalar nav prop, entry.Navigations just as much missing
+                        // the relationship entry as entry.References is. There's no easy way to check for this case.
+
+                        foreach (var reference in entry.References)
+                        {
+                            var nav = reference.Metadata;
+
+                            if (nav.Inverse?.PropertyInfo is not PropertyInfo relatedProperty) continue;
+
+                            if (reference.CurrentValue is not Object relatedObject) continue;
+
+                            var collectionObject = relatedProperty.GetValue(relatedObject);
+
+                            CollectionHelper.AddOrRemove(collectionObject as IEnumerable, entry.Entity, entry.Metadata.ClrType, false, true);
+                        }
+
+                        entry.State = EntityState.Detached;
+
+                        break;
+                    case EntityState.Detached:
+                    case EntityState.Unchanged:
+                    default:
+                        break;
+                }
             }
         }
     }
