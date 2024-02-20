@@ -16,6 +16,34 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Reconciler.Tests
 {
+    class Star
+    {
+        public String Id { get; set; }
+
+        public ICollection<Planet> Planets { get; set; } = new List<Planet>();
+    }
+
+    class Planet
+    {
+        public String Id { get; set; }
+
+        public String StarId { get; set; }
+
+        public Star Star { get; set; }
+
+        public ICollection<Moon> Moons { get; set; } = new List<Moon>();
+    }
+
+    class Moon
+    {
+        public String Id { get; set; }
+
+        public Planet Planet { get; set; }
+
+        public String PlanetId { get; set; }
+    }
+
+
     [DebuggerDisplay("Id={Id}")]
     class Person
     {
@@ -72,6 +100,8 @@ namespace Reconciler.Tests
         public Int32 No { get; set; }
     }
 
+
+
     [DebuggerDisplay("Id={Id}")]
     class Address
     {
@@ -105,6 +135,10 @@ namespace Reconciler.Tests
 
     class Context : DbContext
     {
+        public DbSet<Star> Stars { get; set; }
+        public DbSet<Planet> Planets { get; set; }
+        public DbSet<Moon> Moons { get; set; }
+
         public DbSet<Person> People { get; set; }
         public DbSet<Address> Addresses { get; set; }
         public DbSet<AddressImage> AddressImages { get; set; }

@@ -72,6 +72,9 @@ namespace Reconciler.Tests
         void ClearDb()
         {
             var db = new Context();
+            ClearDbSet(db.Planets);
+            ClearDbSet(db.Moons);
+            ClearDbSet(db.Stars);
             ClearDbSet(db.People);
             ClearDbSet(db.Addresses);
             ClearDbSet(db.AddressImages);
@@ -97,6 +100,8 @@ namespace Reconciler.Tests
             public String City { get; set; }
 
             public List<EmailAddress> EmailsToCopy { get; set; }
+
+            public Dictionary<Guid, String> Details { get; set; }
 
             public Boolean IncludeAddressImage { get; set; }
             public Boolean IncludeTagPayload { get; set; }
@@ -149,7 +154,6 @@ namespace Reconciler.Tests
                 Tags = personTags,
             };
         }
-
 
         List<EmailAddress> MakeEmailAddresses(int start, int count)
         {
@@ -443,6 +447,28 @@ namespace Reconciler.Tests
 
             Assert.AreEqual(grapth1.EmailAddresses.Count, 3);
             Assert.AreEqual(grapth2.EmailAddresses.Count, 1);
+        }
+
+        [TestMethod]
+        public void TestInsertNestedCollections()
+        {
+            TestGraph(
+                new Star { Id = "sun" },
+                new Star {
+                    Id = "sun",
+                    Planets = {
+                        new Planet {
+                            Id = "mars",
+                            Moons =
+                            {
+                                new Moon { Id = "deimos" },
+                                new Moon { Id = "phobos" }
+                            }
+                        }
+                    }
+                },
+                map => map.WithMany(e => e.Planets, map2 => map2.WithMany(e2 => e2.Moons))
+            );
         }
     }
 }
