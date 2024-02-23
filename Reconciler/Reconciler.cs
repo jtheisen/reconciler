@@ -28,6 +28,8 @@ namespace MonkeyBusters.Reconciliation.Internal
 
         public abstract Task LoadAsync(DbContext db, E attachedEntity);
 
+        public abstract void ForEach(DbContext db, E entity, Action<DbContext, Object> action);
+
         public abstract void Normalize(DbContext db, E entity);
     }
 
@@ -36,6 +38,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         where F : class
     {
         private readonly Expression<Func<E, F>> selectorExpression;
+        private readonly PropertyInfo propertyInfo;
         private readonly Func<E, F> selector;
         private readonly Action<ExtentBuilder<F>> extent;
         private readonly Boolean removeOrphans;
@@ -43,6 +46,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         public EntityReconciler(Expression<Func<E, F>> selector, Action<ExtentBuilder<F>> mapping, Boolean removeOrphans)
         {
             this.selectorExpression = selector;
+            this.propertyInfo = Properties.GetPropertyInfo(selector);
             this.selector = selector.Compile();
             this.extent = mapping;
             this.removeOrphans = removeOrphans;
@@ -90,6 +94,13 @@ namespace MonkeyBusters.Reconciliation.Internal
             await db.LoadExtentAsync(attachedEntity, extent);
         }
 
+        public override void ForEach(DbContext db, E baseEntity, Action<DbContext, Object> action)
+        {
+            var entity = selector(baseEntity);
+
+            db.ForEach(entity, action, extent);
+        }
+
         public override void Normalize(DbContext db, E entity) => db.Normalize(selector(entity), extent);
     }
 
@@ -113,7 +124,7 @@ namespace MonkeyBusters.Reconciliation.Internal
 
         public override async Task ReconcileAsync(DbContext db, E attachedEntity, E templateEntity)
         {
-            var attachedCollection = selector(attachedEntity).ToArray();
+            var attachedCollection = selector(attachedEntity);
             var templateCollection = templateEntity != null
                 ? selector(templateEntity).ToArray()
                 : Enumerable.Empty<F>();
@@ -125,24 +136,12 @@ namespace MonkeyBusters.Reconciliation.Internal
                 select o
             ).ToArray();
 
-            foreach (var e in toRemove)
-            {
-                await db.ReconcileAsync(e, null, extent);
-
-                db.RemoveEntity(e);
-            }
-
             var toAdd = (
                 from n in templateCollection
                 join o in attachedCollection on db.GetEntityKey(n) equals db.GetEntityKey(o) into olds
                 where olds.Count() == 0
                 select n
             ).ToArray();
-
-            foreach (var e in toAdd)
-            {
-                await db.ReconcileAsync(e, extent);
-            }
 
             var toUpdate = (
                 from o in attachedCollection
@@ -153,6 +152,28 @@ namespace MonkeyBusters.Reconciliation.Internal
                     TemplateEntity = n
                 }
             ).ToArray();
+
+            foreach (var e in toRemove)
+            {
+                await db.ReconcileAsync(e, null, extent);
+
+                db.RemoveEntity(e);
+            }
+
+            foreach (var e in toAdd)
+            {
+                attachedCollection.Add(e);
+
+                db.SetState(e, EntityState.Added, extent);
+
+                //await db.ReconcileAsync(e, extent);
+
+                //db.Entry(e).State = EntityState.Added;
+
+                //db.ChangeTracker.DetectChanges();
+
+                //var state = db.Entry(e).State;
+            }
 
             foreach (var pair in toUpdate)
             {
@@ -167,6 +188,16 @@ namespace MonkeyBusters.Reconciliation.Internal
             foreach (var attachedEntity in attachedCollection)
             {
                 await db.LoadExtentAsync(attachedEntity, extent);
+            }
+        }
+
+        public override void ForEach(DbContext db, E baseEntity, Action<DbContext, Object> action)
+        {
+            var collection = selector(baseEntity);
+
+            foreach (var entity in collection)
+            {
+                db.ForEach(entity, action, extent);
             }
         }
 
@@ -505,6 +536,9 @@ namespace Microsoft.EntityFrameworkCore
             
             if (isNewEntity)
             {
+                //attachedEntity = db.Add(templateEntity).Entity;
+                //return attachedEntity;
+
                 attachedEntity = db.AddEntity(templateEntity);
             }
 
@@ -576,6 +610,40 @@ namespace Microsoft.EntityFrameworkCore
             task.Wait();
             return task.Result;
         }
+
+        /// <summary>
+        /// Creates a detached shallow clone from the given entity
+        /// </summary>
+        /// <typeparam name="E">The entity to clone.</typeparam>
+        /// <param name="arbitraryContext">A context providing the model - this doesn't have to be a context the entity is attached to</param>
+        /// <param name="entity"></param>
+        /// <returns></returns>
+        public static E CreateDetachedShallowClone<E>(this DbContext arbitraryContext, E entity)
+            where E : class
+            => arbitraryContext.Entry(entity).CurrentValues.Clone().ToObject() as E;
+
+        public static void SetState<E>(this DbContext db, E entity, EntityState state, Action<ExtentBuilder<E>> extent)
+            where E : class
+        {
+            ForEach(db, entity, (db2, e) => db2.Entry(e).State = state, extent);
+        }
+
+        public static void ForEach<E>(this DbContext db, E entity, Action<DbContext, Object> action, Action<ExtentBuilder<E>> extent)
+            where E : class
+        {
+            action(db, entity);
+
+            if (extent is not null)
+            {
+                var builder = new ExtentBuilder<E>();
+                extent(builder);
+
+                foreach (var reconciler in builder.reconcilers)
+                {
+                    reconciler.ForEach(db, entity, action);
+                }
+            }
+        }
     }
 
     static class Properties
@@ -645,7 +713,7 @@ namespace Microsoft.EntityFrameworkCore
         internal static E CloneEntity<E>(E entity)
             where E : class
         {
-            var type = typeof(E);
+            var type = entity.GetType();
 
             var clone = (E)Activator.CreateInstance(type);
 
