@@ -52,6 +52,8 @@ namespace MonkeyBusters.Reconciliation.Internal
         {
             if (entity == null) return null;
 
+            if (!db.Entry(entity).IsKeySet) return null;
+
             var keyDefinition = db.Model.FindEntityType(typeof(E)).FindPrimaryKey();
 
             var pairs = keyDefinition.Properties

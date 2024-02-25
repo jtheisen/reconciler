@@ -65,24 +65,35 @@ namespace MonkeyBusters.Reconciliation.Internal
             var attachedEntityKey = db.GetEntityKey(attachedEntity);
             var templateEntityKey = db.GetEntityKey(templateEntity);
 
-            if (templateEntityKey == attachedEntityKey)
+            if (templateEntityKey != null && attachedEntityKey != null && templateEntityKey == attachedEntityKey)
             {
-                if (templateEntityKey == null) return;
-
                 await db.ReconcileAsync(templateEntity, extent);
             }
             else
             {
-                if (templateEntity != null)
-                {
-                    await db.ReconcileAsync(templateEntity, extent);
-                }
-
                 if (attachedEntity != null && removeOrphans)
                 {
+                    if (attachedEntityKey == null) throw new Exception("Unexpectedly trying to remove entity without key");
+
                     await db.ReconcileAsync(attachedEntity, null, extent);
 
                     db.RemoveEntity(attachedEntity);
+                }
+
+                if (templateEntity != null)
+                {
+                    if (templateEntityKey != null)
+                    {
+                        await db.ReconcileAsync(templateEntity, extent);
+                    }
+                    else if (templateEntityKey != null)
+                    {
+                        propertyInfo.SetValue(attachedBaseEntity, templateEntity);
+
+                        db.Entry(templateEntity).State = EntityState.Added;
+
+                        await db.ReconcileAsync(templateEntity, templateEntity, extent);
+                    }
                 }
             }
         }
@@ -164,11 +175,11 @@ namespace MonkeyBusters.Reconciliation.Internal
             {
                 attachedCollection.Add(e);
 
-                db.SetState(e, EntityState.Added, extent);
-
-                //await db.ReconcileAsync(e, extent);
-
                 //db.Entry(e).State = EntityState.Added;
+                //db.SetState(e, EntityState.Added, extent);
+
+                await db.ReconcileAsync(e, e, extent);
+
 
                 //db.ChangeTracker.DetectChanges();
 
