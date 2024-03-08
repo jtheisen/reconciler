@@ -180,6 +180,8 @@ namespace Reconciler.Tests
             SaveGraph(original);
 
             {
+                Console.WriteLine("Beginning of test reconciliation");
+
                 var db = new Context();
                 var attachedEntity = db.Reconcile(target, extent);
                 //var entries = db.ChangeTracker.Entries().Select(e => new EntityWithState { Entry = e }).ToArray();

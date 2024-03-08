@@ -4,6 +4,8 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
 using System.Reflection;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Internal;
 
 #if EF6
 using System.Data.Entity;
@@ -24,7 +26,7 @@ namespace MonkeyBusters.Reconciliation.Internal
     {
         public abstract IQueryable<E> AugmentInclude(IQueryable<E> query);
 
-        public abstract Task ReconcileAsync(DbContext db, E attachedEntity, E templateEntity);
+        public abstract Task ReconcileAsync(DbContext db, E attachedEntity, E templateEntity, Int32 nesting);
 
         public abstract Task LoadAsync(DbContext db, E attachedEntity);
 
@@ -51,7 +53,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         public override IQueryable<E> AugmentInclude(IQueryable<E> query)
             => query.Include(selectorExpression);
 
-        public override async Task ReconcileAsync(DbContext db, E attachedBaseEntity, E templateBaseEntity)
+        public override async Task ReconcileAsync(DbContext db, E attachedBaseEntity, E templateBaseEntity, Int32 nesting)
         {
             var attachedEntity = selector(attachedBaseEntity);
             var templateEntity = templateBaseEntity != null
@@ -65,18 +67,18 @@ namespace MonkeyBusters.Reconciliation.Internal
             {
                 if (templateEntityKey == null) return;
 
-                await db.ReconcileAsync(templateEntity, extent);
+                await db.ReconcileAsync(null, templateEntity, extent, nesting);
             }
             else
             {
                 if (templateEntity != null)
                 {
-                    await db.ReconcileAsync(templateEntity, extent);
+                    await db.ReconcileAsync(null, templateEntity, extent, nesting);
                 }
 
                 if (attachedEntity != null && removeOrphans)
                 {
-                    await db.ReconcileAsync(attachedEntity, null, extent);
+                    await db.ReconcileAsync(attachedEntity, null, extent, nesting);
 
                     db.RemoveEntity(attachedEntity);
                 }
@@ -111,7 +113,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         public override IQueryable<E> AugmentInclude(IQueryable<E> query)
             => query.Include(this.selectorExpression);
 
-        public override async Task ReconcileAsync(DbContext db, E attachedEntity, E templateEntity)
+        public override async Task ReconcileAsync(DbContext db, E attachedEntity, E templateEntity, Int32 nesting)
         {
             var attachedCollection = selector(attachedEntity).ToArray();
             var templateCollection = templateEntity != null
@@ -127,7 +129,7 @@ namespace MonkeyBusters.Reconciliation.Internal
 
             foreach (var e in toRemove)
             {
-                await db.ReconcileAsync(e, null, extent);
+                await db.ReconcileAsync(e, null, extent, nesting);
 
                 db.RemoveEntity(e);
             }
@@ -141,7 +143,7 @@ namespace MonkeyBusters.Reconciliation.Internal
 
             foreach (var e in toAdd)
             {
-                await db.ReconcileAsync(e, extent);
+                await db.ReconcileAsync(null, e, extent, nesting);
             }
 
             var toUpdate = (
@@ -156,7 +158,7 @@ namespace MonkeyBusters.Reconciliation.Internal
 
             foreach (var pair in toUpdate)
             {
-                await db.ReconcileAsync(pair.AttachedEntity, pair.TemplateEntity, extent);
+                await db.ReconcileAsync(pair.AttachedEntity, pair.TemplateEntity, extent, nesting);
             }
         }
 
@@ -400,7 +402,9 @@ namespace System.Data.Entity
 namespace Microsoft.EntityFrameworkCore
 #endif
 {
+    using Microsoft.Extensions.Logging;
     using MonkeyBusters.Reconciliation.Internal;
+    using System.Text;
 
     /// <summary>
     /// The public interface to the Reconciler.
@@ -418,7 +422,7 @@ namespace Microsoft.EntityFrameworkCore
         public static Task<E> ReconcileAsync<E>(this DbContext db, E templateEntity, Action<ExtentBuilder<E>> extent)
             where E : class
         {
-            return db.ReconcileAsync(null, templateEntity, extent);
+            return db.ReconcileAsync(null, templateEntity, extent, 0);
         }
 
         /// <summary>
@@ -432,7 +436,7 @@ namespace Microsoft.EntityFrameworkCore
         public static async Task<E> ReconcileAndSaveChangesAsync<E>(this DbContext db, E templateEntity, Action<ExtentBuilder<E>> extent)
             where E : class
         {
-            var attachedEntity = await db.ReconcileAsync(null, templateEntity, extent);
+            var attachedEntity = await db.ReconcileAsync(null, templateEntity, extent, 0);
             await db.SaveChangesAsync();
             return attachedEntity;
         }
@@ -480,11 +484,13 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="templateEntity">The detached graph to reconcile with.</param>
         /// <param name="extent">The extent of the subgraph to reconcile.</param>
         /// <returns>The attached entity.</returns>
-        internal static async Task<E> ReconcileAsync<E>(this DbContext db, E attachedEntity, E templateEntity, Action<ExtentBuilder<E>> extent)
+        internal static async Task<E> ReconcileAsync<E>(this DbContext db, E attachedEntity, E templateEntity, Action<ExtentBuilder<E>> extent, Int32 nesting)
             where E : class
         {
             // FIXME: We want to be able to deal with unset foreign keys, perhaps this helps:
             // https://stackoverflow.com/questions/4384081/read-foreign-key-metadata-programatically-with-entity-framework-4
+
+            db.LogTrace(nesting, "> ReconcileAsync");
 
             var builder = new ExtentBuilder<E>();
             extent?.Invoke(builder);
@@ -496,9 +502,11 @@ namespace Microsoft.EntityFrameworkCore
                 // the caller.
                 var entityToTakeTheKeyFrom = templateEntity ?? attachedEntity;
 
-                attachedEntity = builder.reconcilers
+                attachedEntity = await builder.reconcilers
                     .Aggregate(db.GetEntity(entityToTakeTheKeyFrom), (q, r) => r.AugmentInclude(q))
-                    .FirstOrDefault();
+                    .FirstOrDefaultAsync();
+
+                db.LogTrace(nesting, "  loaded entity");
             }
 
             var isNewEntity = attachedEntity == null || (db.Entry(attachedEntity).State == EntityState.Deleted && templateEntity != null);
@@ -506,6 +514,8 @@ namespace Microsoft.EntityFrameworkCore
             if (isNewEntity)
             {
                 attachedEntity = db.AddEntity(templateEntity);
+
+                db.LogTrace(nesting, "  added new entity");
             }
 
             // Newer versions of EF Core need the new key values of a replaced related entity
@@ -517,6 +527,8 @@ namespace Microsoft.EntityFrameworkCore
             if (!isNewEntity && templateEntity != null)
             {
                 db.UpdateEntity(attachedEntity, templateEntity);
+
+                db.LogTrace(nesting, "  updated entity");
             }
 
             foreach (var property in builder.properties)
@@ -526,8 +538,14 @@ namespace Microsoft.EntityFrameworkCore
 
             foreach (var reconciler in builder.reconcilers)
             {
-                await reconciler.ReconcileAsync(db, cloneOfAttachedEntity, templateEntity);
+                db.LogTrace(nesting, "  > reconciler {reconciler}", reconciler);
+
+                await reconciler.ReconcileAsync(db, cloneOfAttachedEntity, templateEntity, nesting + 1);
+
+                db.LogTrace(nesting, "  < reconciler {reconciler}", reconciler);
             }
+
+            db.LogTrace(nesting, "< ReconcileAsync");
 
             return attachedEntity;
         }
@@ -575,6 +593,29 @@ namespace Microsoft.EntityFrameworkCore
             var task = db.LoadExtentAsync(entityToLoad, extent);
             task.Wait();
             return task.Result;
+        }
+
+
+        internal static void LogTrace(this DbContext db, Int32 nesting, String message, params Object[] args)
+        {
+            if (db is IDbContextDependencies dbcd)
+            {
+// #pragma warning disable EF1001
+                var logger = dbcd.InfrastructureLogger?.Logger;
+// #pragma warning restore EF1001
+
+                if (logger.IsEnabled(LogLevel.Trace))
+                {
+                    var b = new StringBuilder();
+                    for (var i = 0; i < nesting; ++i)
+                    {
+                        b.Append(".   ");
+                    }
+                    b.Append(message);
+
+                    logger.LogTrace(b.ToString(), message, args);
+                }
+            }
         }
     }
 
