@@ -16,6 +16,9 @@ using System.Data.Entity.Infrastructure;
 #if EFCORE
 using Microsoft.EntityFrameworkCore;
 using DbEntityEntry = Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry;
+using Microsoft.Extensions.Logging;
+using Microsoft.VisualStudio.TestPlatform.CommunicationUtilities;
+using System.Text;
 #endif
 
 namespace Reconciler.Tests
@@ -32,11 +35,17 @@ namespace Reconciler.Tests
 
         Int32 currentI = 0;
 
+        Byte[] bytes = new Byte[16];
+
         public Guid GetNext()
         {
             if (currentI >= staticIds.Count)
             {
-                staticIds.Add(Guid.NewGuid());
+                BitConverter.GetBytes(currentI + 1).CopyTo(bytes, 0);
+                
+                var id = new Guid(bytes);
+
+                staticIds.Add(id);
             }
             return staticIds[currentI++];
         }
@@ -59,6 +68,13 @@ namespace Reconciler.Tests
         public void Initialize()
         {
 #if EFCORE
+            var loggerFactory = LoggerFactory.Create(logging => logging
+                .AddConsole()
+                .SetMinimumLevel(LogLevel.Trace)
+            );
+
+            Context.StaticReconcilerLogger = loggerFactory.CreateLogger("Reconciler");
+
             new Context().Database.EnsureCreated();
 #endif
             ClearDb();
@@ -72,9 +88,16 @@ namespace Reconciler.Tests
         void ClearDb()
         {
             var db = new Context();
+
             ClearDbSet(db.Planets);
             ClearDbSet(db.Moons);
             ClearDbSet(db.Stars);
+
+            ClearDbSet(db.AutoIncManyManys);
+            ClearDbSet(db.AutoIncManyOne);
+            ClearDbSet(db.AutoIncManys);
+            ClearDbSet(db.AutoIncRoots);
+
             ClearDbSet(db.People);
             ClearDbSet(db.Addresses);
             ClearDbSet(db.AddressImages);
@@ -171,9 +194,13 @@ namespace Reconciler.Tests
         void TestGraph<E>(E original, E target, Action<ExtentBuilder<E>> extent, out E reloadedTarget, out E reloadedUpdate)
             where E : class
         {
-            SaveGraph(target);
+            var targetJson = JsonConvert.SerializeObject(target, Formatting.Indented);
 
-            reloadedTarget = new Context().LoadExtent(target, extent);
+            E CloneTarget() => JsonConvert.DeserializeObject<E>(targetJson);
+
+            SaveGraph(CloneTarget());
+
+            reloadedTarget = new Context().LoadExtent(CloneTarget(), extent);
 
             ClearDb();
 
@@ -183,7 +210,13 @@ namespace Reconciler.Tests
                 Console.WriteLine("Beginning of test reconciliation");
 
                 var db = new Context();
-                var attachedEntity = db.Reconcile(target, extent);
+
+                Console.WriteLine("TestGraph reconciling to target:\n" + targetJson);
+
+                var attachedEntity = db.Reconcile(CloneTarget(), extent);
+
+                Console.WriteLine("EF debug view:\n" + db.ChangeTracker.DebugView.ShortView);
+
                 //var entries = db.ChangeTracker.Entries().Select(e => new EntityWithState { Entry = e }).ToArray();
                 db.SaveChanges();
             }
@@ -193,6 +226,16 @@ namespace Reconciler.Tests
             new Context().Normalize(original, extent);
             new Context().Normalize(reloadedTarget, extent);
             new Context().Normalize(reloadedUpdate, extent);
+        }
+
+        E SaveAndReloadGraph<E>(E target, Action<ExtentBuilder<E>> extent)
+            where E : class
+        {
+            SaveGraph(target);
+
+            var reloadedTarget = new Context().LoadExtent(target, extent);
+
+            return reloadedTarget;
         }
 
         private static void AssertGraphEquality<E>(E original, E reloadedTarget, E reloadedUpdate) where E : class
@@ -370,7 +413,6 @@ namespace Reconciler.Tests
 
             Assert.AreEqual(updatedPerson.EmailAddresses.Count, 2);
             AssertGraphEquality(MakeGraph(), initialPerson, updatedPerson);
-
         }
 
         [TestMethod]
@@ -471,6 +513,170 @@ namespace Reconciler.Tests
                 },
                 map => map.WithMany(e => e.Planets, map2 => map2.WithMany(e2 => e2.Moons))
             );
+        }
+
+        [TestMethod]
+        public void TestInsertNestedCollectionsAutoInc()
+        {
+            ClearDb();
+
+            var root = SaveAndReloadGraph(new AutoIncRoot { }, e => e.WithMany(e2 => e2.Manys));
+
+            root.Manys.Add(
+                new AutoIncMany
+                {
+                    ManyManys =
+                    {
+                        new AutoIncManyMany { },
+                        new AutoIncManyMany { }
+                    }
+                }
+            );
+            root.Manys.Add(
+                new AutoIncMany
+                {
+                    ManyManys =
+                    {
+                        new AutoIncManyMany { },
+                        new AutoIncManyMany { }
+                    }
+                }
+            );
+
+            new Context().ReconcileAndSaveChanges(root, m0 => m0
+                .WithMany(e0 => e0.Manys, m1 => m1
+                    .WithMany(e1 => e1.ManyManys)
+                )
+            );
+
+            var reloaded = new Context().AutoIncRoots
+                .OrderBy(e => e.Id)
+                .AsNoTracking()
+                .Include(e => e.Manys)
+                    .ThenInclude(e => e.ManyManys)
+                .Single()
+                    ;
+
+            Assert.AreEqual(2, reloaded.Manys.Count);
+            Assert.AreEqual(2, reloaded.Manys.First().ManyManys.Count);
+            Assert.AreEqual(2, reloaded.Manys.Skip(1).First().ManyManys.Count);
+        }
+
+        [TestMethod]
+        public void TestInsertNestedScalarAutoInc()
+        {
+            ClearDb();
+
+            var root = SaveAndReloadGraph(new AutoIncRoot { }, e => e.WithMany(e2 => e2.Manys));
+
+            root.Manys.Add(
+                new AutoIncMany
+                {
+                    ManyOne = new AutoIncManyOne { },
+                }
+            );
+            root.Manys.Add(
+                new AutoIncMany
+                {
+                    ManyOne = new AutoIncManyOne { },
+                }
+            );
+
+            new Context().ReconcileAndSaveChanges(root, m0 => m0
+                .WithMany(e0 => e0.Manys, m1 => m1
+                    .WithMany(e1 => e1.ManyManys)
+                )
+            );
+
+            var reloaded = new Context().AutoIncRoots
+                .OrderBy(e => e.Id)
+                .AsNoTracking()
+                .Include(e => e.Manys)
+                    .ThenInclude(e => e.ManyOne)
+                .Single()
+                    ;
+
+            Assert.AreEqual(2, reloaded.Manys.Count);
+            Assert.IsNotNull(reloaded.Manys.First().ManyOne);
+            Assert.IsNotNull(reloaded.Manys.Skip(1).First().ManyOne);
+        }
+
+        [TestMethod]
+        public void TestAddToCollectionManually()
+        {
+            ClearDb();
+
+            var db = new Context();
+
+            var person = new Person
+            {
+                Id = Guid.NewGuid(),
+                Address = new Address()
+            };
+
+            db.People.Add(person);
+
+            db.SaveChanges();
+
+            var personInOtherContext = new Context().Entry(person);
+
+            Assert.AreEqual(EntityState.Detached, personInOtherContext.State);
+
+            Assert.IsTrue(Object.ReferenceEquals(personInOtherContext.Entity, person));
+
+            var clonedPerson = personInOtherContext.CurrentValues.Clone().ToObject();
+
+            Assert.IsFalse(Object.ReferenceEquals(clonedPerson, person));
+
+            var personTag = new PersonTag { Id = Guid.NewGuid() };
+
+            person.Tags.Add(personTag);
+
+            Assert.AreEqual(EntityState.Detached, db.Entry(personTag).State);
+
+            db.ChangeTracker.DetectChanges();
+
+            Assert.AreEqual(EntityState.Modified, db.Entry(personTag).State);
+        }
+
+        [TestMethod]
+        public void TestChangeCollectionManually()
+        {
+            ClearDb();
+
+            {
+                var db = new Context();
+
+                var root1 = new AutoIncRoot();
+
+                var root1many1 = new AutoIncMany();
+
+                root1.Manys.Add(root1many1);
+
+                var root1many1many1 = new AutoIncManyMany();
+
+                root1many1.ManyManys.Add(root1many1many1);
+
+                db.AutoIncRoots.Add(root1);
+
+                db.SaveChanges();
+            }
+
+            {
+                var db = new Context();
+
+                var root1 = db.AutoIncRoots.Single();
+
+                var root1many1many1 = db.AutoIncManyManys.Single();
+
+                var root1many2 = new AutoIncMany();
+
+                root1many2.ManyManys.Add(root1many1many1);
+
+                root1.Manys.Add(root1many2);
+
+                db.SaveChanges();
+            }
         }
     }
 }

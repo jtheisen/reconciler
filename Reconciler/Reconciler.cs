@@ -30,6 +30,8 @@ namespace MonkeyBusters.Reconciliation.Internal
 
         public abstract Task LoadAsync(DbContext db, E attachedEntity);
 
+        public abstract void ForEach(DbContext db, E entity, Action<DbContext, Object> action);
+
         public abstract void Normalize(DbContext db, E entity);
     }
 
@@ -38,6 +40,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         where F : class
     {
         private readonly Expression<Func<E, F>> selectorExpression;
+        private readonly PropertyInfo propertyInfo;
         private readonly Func<E, F> selector;
         private readonly Action<ExtentBuilder<F>> extent;
         private readonly Boolean removeOrphans;
@@ -45,10 +48,13 @@ namespace MonkeyBusters.Reconciliation.Internal
         public EntityReconciler(Expression<Func<E, F>> selector, Action<ExtentBuilder<F>> mapping, Boolean removeOrphans)
         {
             this.selectorExpression = selector;
+            this.propertyInfo = Properties.GetPropertyInfo(selector);
             this.selector = selector.Compile();
             this.extent = mapping;
             this.removeOrphans = removeOrphans;
         }
+
+        public override String ToString() => $"-{propertyInfo.Name}";
 
         public override IQueryable<E> AugmentInclude(IQueryable<E> query)
             => query.Include(selectorExpression);
@@ -63,24 +69,35 @@ namespace MonkeyBusters.Reconciliation.Internal
             var attachedEntityKey = db.GetEntityKey(attachedEntity);
             var templateEntityKey = db.GetEntityKey(templateEntity);
 
-            if (templateEntityKey == attachedEntityKey)
+            if (templateEntityKey != null && attachedEntityKey != null && templateEntityKey == attachedEntityKey)
             {
-                if (templateEntityKey == null) return;
-
-                await db.ReconcileAsync(null, templateEntity, extent, nesting);
+                await db.ReconcileAsync(templateEntity, extent); // FIXME: we're not giving the attached one?
             }
             else
             {
-                if (templateEntity != null)
-                {
-                    await db.ReconcileAsync(null, templateEntity, extent, nesting);
-                }
-
                 if (attachedEntity != null && removeOrphans)
                 {
+                    if (attachedEntityKey == null) throw new Exception("Unexpectedly trying to remove entity without key");
+
                     await db.ReconcileAsync(attachedEntity, null, extent, nesting);
 
                     db.RemoveEntity(attachedEntity);
+                }
+
+                if (templateEntity != null)
+                {
+                    if (templateEntityKey != null)
+                    {
+                        await db.ReconcileAsync(templateEntity, extent);
+                    }
+                    else if (templateEntityKey != null)
+                    {
+                        propertyInfo.SetValue(attachedBaseEntity, templateEntity);
+
+                        db.Entry(templateEntity).State = EntityState.Added;
+
+                        await db.ReconcileAsync(templateEntity, templateEntity, extent, nesting);
+                    }
                 }
             }
         }
@@ -90,6 +107,13 @@ namespace MonkeyBusters.Reconciliation.Internal
             if (extent == null) return;
             var attachedEntity = selector(attachedBaseEntity);
             await db.LoadExtentAsync(attachedEntity, extent);
+        }
+
+        public override void ForEach(DbContext db, E baseEntity, Action<DbContext, Object> action)
+        {
+            var entity = selector(baseEntity);
+
+            db.ForEach(entity, action, extent);
         }
 
         public override void Normalize(DbContext db, E entity) => db.Normalize(selector(entity), extent);
@@ -110,29 +134,27 @@ namespace MonkeyBusters.Reconciliation.Internal
             this.extent = extent;
         }
 
+        public override String ToString() => $"*{Properties.GetPropertyInfo(selectorExpression).Name}";
+
         public override IQueryable<E> AugmentInclude(IQueryable<E> query)
             => query.Include(this.selectorExpression);
 
         public override async Task ReconcileAsync(DbContext db, E attachedEntity, E templateEntity, Int32 nesting)
         {
-            var attachedCollection = selector(attachedEntity).ToArray();
+            // FIXME: Tests are failing as we're trying to remove entities with default keys
+
+            var attachedCollection = selector(attachedEntity);
             var templateCollection = templateEntity != null
                 ? selector(templateEntity).ToArray()
                 : Enumerable.Empty<F>();
 
             var toRemove = (
                 from o in attachedCollection
+                where db.GetEntityKey(o) != null
                 join n in templateCollection on db.GetEntityKey(o) equals db.GetEntityKey(n) into news
                 where news.Count() == 0 && db.Entry(o)?.State != EntityState.Deleted
                 select o
             ).ToArray();
-
-            foreach (var e in toRemove)
-            {
-                await db.ReconcileAsync(e, null, extent, nesting);
-
-                db.RemoveEntity(e);
-            }
 
             var toAdd = (
                 from n in templateCollection
@@ -140,11 +162,6 @@ namespace MonkeyBusters.Reconciliation.Internal
                 where olds.Count() == 0
                 select n
             ).ToArray();
-
-            foreach (var e in toAdd)
-            {
-                await db.ReconcileAsync(null, e, extent, nesting);
-            }
 
             var toUpdate = (
                 from o in attachedCollection
@@ -155,6 +172,28 @@ namespace MonkeyBusters.Reconciliation.Internal
                     TemplateEntity = n
                 }
             ).ToArray();
+
+            foreach (var e in toRemove)
+            {
+                await db.ReconcileAsync(e, null, extent, nesting);
+
+                db.RemoveEntity(e);
+            }
+
+            foreach (var e in toAdd)
+            {
+                attachedCollection.Add(e);
+
+                //db.Entry(e).State = EntityState.Added;
+                //db.SetState(e, EntityState.Added, extent);
+
+                await db.ReconcileAsync(e, e, extent, nesting);
+
+
+                //db.ChangeTracker.DetectChanges();
+
+                //var state = db.Entry(e).State;
+            }
 
             foreach (var pair in toUpdate)
             {
@@ -169,6 +208,16 @@ namespace MonkeyBusters.Reconciliation.Internal
             foreach (var attachedEntity in attachedCollection)
             {
                 await db.LoadExtentAsync(attachedEntity, extent);
+            }
+        }
+
+        public override void ForEach(DbContext db, E baseEntity, Action<DbContext, Object> action)
+        {
+            var collection = selector(baseEntity);
+
+            foreach (var entity in collection)
+            {
+                db.ForEach(entity, action, extent);
             }
         }
 
@@ -406,6 +455,13 @@ namespace Microsoft.EntityFrameworkCore
     using MonkeyBusters.Reconciliation.Internal;
     using System.Text;
 
+    public interface IReconcilerLoggerProvider
+    {
+        ILogger ReconcilerLogger { get; }
+
+        Boolean LogDebugView { get; }
+    }
+
     /// <summary>
     /// The public interface to the Reconciler.
     /// </summary>
@@ -495,7 +551,11 @@ namespace Microsoft.EntityFrameworkCore
             var builder = new ExtentBuilder<E>();
             extent?.Invoke(builder);
 
-            if (attachedEntity == null || builder.reconcilers.Count != 0)
+            // Try to load an existing entity and their navigational properties unless there are none or we've added the entity
+            // -- and added entity in this situation happens only in the case of database-generated keys where we can know
+            // from the key that the entity must be added and can't already exist in storage. In that particular case, no
+            // navigation properties need loading either.
+            if (attachedEntity == null || (db.Entry(attachedEntity).State != EntityState.Added && builder.reconcilers.Count != 0))
             {
                 // In case of removals, the templateEntity is null, and otherwise
                 // attachedEntity is often null as it's not always preloaded by
@@ -509,10 +569,13 @@ namespace Microsoft.EntityFrameworkCore
                 db.LogTrace(nesting, "  loaded entity");
             }
 
-            var isNewEntity = attachedEntity == null || (db.Entry(attachedEntity).State == EntityState.Deleted && templateEntity != null);
+            var doesEntityNeedAdding = attachedEntity == null || (db.Entry(attachedEntity).State == EntityState.Deleted && templateEntity != null);
             
-            if (isNewEntity)
+            if (doesEntityNeedAdding)
             {
+                //attachedEntity = db.Add(templateEntity).Entity;
+                //return attachedEntity;
+
                 attachedEntity = db.AddEntity(templateEntity);
 
                 db.LogTrace(nesting, "  added new entity");
@@ -524,7 +587,9 @@ namespace Microsoft.EntityFrameworkCore
             // do do after.
             var cloneOfAttachedEntity = Properties.CloneEntity(attachedEntity);
 
-            if (!isNewEntity && templateEntity != null)
+            // An entity in the added state does not need updating and UpdateEntity fails with
+            // database-generated keys.
+            if (!doesEntityNeedAdding && templateEntity != null && db.Entry(attachedEntity).State != EntityState.Added)
             {
                 db.UpdateEntity(attachedEntity, templateEntity);
 
@@ -595,15 +660,44 @@ namespace Microsoft.EntityFrameworkCore
             return task.Result;
         }
 
+        /// <summary>
+        /// Creates a detached shallow clone from the given entity
+        /// </summary>
+        /// <typeparam name="E">The entity to clone.</typeparam>
+        /// <param name="arbitraryContext">A context providing the model - this doesn't have to be a context the entity is attached to</param>
+        /// <param name="entity"></param>
+        /// <returns></returns>
+        public static E CreateDetachedShallowClone<E>(this DbContext arbitraryContext, E entity)
+            where E : class
+            => arbitraryContext.Entry(entity).CurrentValues.Clone().ToObject() as E;
+
+        public static void SetState<E>(this DbContext db, E entity, EntityState state, Action<ExtentBuilder<E>> extent)
+            where E : class
+        {
+            ForEach(db, entity, (db2, e) => db2.Entry(e).State = state, extent);
+        }
+
+        public static void ForEach<E>(this DbContext db, E entity, Action<DbContext, Object> action, Action<ExtentBuilder<E>> extent)
+            where E : class
+        {
+            action(db, entity);
+
+            if (extent is not null)
+            {
+                var builder = new ExtentBuilder<E>();
+                extent(builder);
+
+                foreach (var reconciler in builder.reconcilers)
+                {
+                    reconciler.ForEach(db, entity, action);
+                }
+            }
+        }
 
         internal static void LogTrace(this DbContext db, Int32 nesting, String message, params Object[] args)
         {
-            if (db is IDbContextDependencies dbcd)
+            if (db is IReconcilerLoggerProvider provider && provider.ReconcilerLogger is ILogger logger)
             {
-// #pragma warning disable EF1001
-                var logger = dbcd.InfrastructureLogger?.Logger;
-// #pragma warning restore EF1001
-
                 if (logger.IsEnabled(LogLevel.Trace))
                 {
                     var b = new StringBuilder();
@@ -612,8 +706,18 @@ namespace Microsoft.EntityFrameworkCore
                         b.Append(".   ");
                     }
                     b.Append(message);
+                    if (provider.LogDebugView)
+                    {
+                        b.AppendLine();
+                        b.AppendLine(db.ChangeTracker.DebugView.ShortView
+                            .Replace("{", "{{")
+                            .Replace("}", "}}")
+                        );
+                    }
 
-                    logger.LogTrace(b.ToString(), message, args);
+                    //db.ChangeTracker.DetectChanges();
+
+                    logger.LogTrace(b.ToString(), args);
                 }
             }
         }
@@ -686,7 +790,7 @@ namespace Microsoft.EntityFrameworkCore
         internal static E CloneEntity<E>(E entity)
             where E : class
         {
-            var type = typeof(E);
+            var type = entity.GetType();
 
             var clone = (E)Activator.CreateInstance(type);
 

@@ -12,6 +12,9 @@ using System.Data.Entity;
 
 #if EFCORE
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
+using Microsoft.Extensions.Options;
 #endif
 
 namespace Reconciler.Tests
@@ -43,6 +46,41 @@ namespace Reconciler.Tests
         public String PlanetId { get; set; }
     }
 
+    class AutoIncRoot
+    {
+        public Int32 Id { get; set; }
+
+        public ICollection<AutoIncMany> Manys { get; set; } = new List<AutoIncMany>();
+    }
+
+    class AutoIncMany
+    {
+        public Int32 Id { get; set; }
+
+        public Int32 RootId { get; set; }
+
+        public AutoIncRoot Root { get; set; }
+
+        public Int32? ManyOneId { get; set; }
+
+        public AutoIncManyOne ManyOne { get; set; }
+
+        public ICollection<AutoIncManyMany> ManyManys { get; set; } = new List<AutoIncManyMany>();
+    }
+
+    class AutoIncManyMany
+    {
+        public Int32 Id { get; set; }
+
+        public Int32 ManyId { get; set; }
+
+        public AutoIncMany Many { get; set; }
+    }
+
+    class AutoIncManyOne
+    {
+        public Int32 Id { get; set; }
+    }
 
     [DebuggerDisplay("Id={Id}")]
     class Person
@@ -134,10 +172,18 @@ namespace Reconciler.Tests
     }
 
     class Context : DbContext
+#if EFCORE
+        , IReconcilerLoggerProvider
+#endif
     {
         public DbSet<Star> Stars { get; set; }
         public DbSet<Planet> Planets { get; set; }
         public DbSet<Moon> Moons { get; set; }
+
+        public DbSet<AutoIncRoot> AutoIncRoots { get; set; }
+        public DbSet<AutoIncMany> AutoIncManys { get; set; }
+        public DbSet<AutoIncManyMany> AutoIncManyManys { get; set; }
+        public DbSet<AutoIncManyOne> AutoIncManyOne { get; set; }
 
         public DbSet<Person> People { get; set; }
         public DbSet<Address> Addresses { get; set; }
@@ -172,9 +218,64 @@ namespace Reconciler.Tests
 #endif
 
 #if EFCORE
+        public static class OptionsMonitor
+        {
+            public static OptionsMonitor<TOptions> Create<TOptions>(TOptions options) => new OptionsMonitor<TOptions>(options);
+        }
+
+        public class OptionsMonitor<TOptions> : IOptionsMonitor<TOptions>
+        {
+            public OptionsMonitor(TOptions initialValue) => CurrentValue = initialValue;
+
+            readonly List<Action<TOptions, string>> _listeners = new();
+            public TOptions CurrentValue { get; private set; }
+            public TOptions Get(string name) => throw new NotImplementedException();
+
+            public IDisposable OnChange(Action<TOptions, string> listener)
+            {
+                _listeners.Add(listener);
+                return new ActionDisposable(() => _listeners.Remove(listener));
+            }
+
+            public void UpdateOptions(TOptions options)
+            {
+                CurrentValue = options;
+                _listeners.ForEach(listener => listener(options, string.Empty));
+            }
+
+            public sealed class ActionDisposable : IDisposable
+            {
+                readonly Action _action;
+
+                public ActionDisposable(Action action) => _action = action;
+
+                public void Dispose() => _action();
+            }
+        }
+
+        public ILogger ReconcilerLogger => StaticReconcilerLogger;
+
+        public Boolean LogDebugView => true;
+
+        public static ILogger StaticReconcilerLogger { get; set; }
+
+        static Boolean EfLoggingFilter(String category, String name, LogLevel level)
+        {
+            return false;
+        }
+
+        public static readonly LoggerFactory ConsoleLoggerFactory = new LoggerFactory(
+            new[] { new ConsoleLoggerProvider(OptionsMonitor.Create(new ConsoleLoggerOptions())) },
+            new LoggerFilterOptions().AddFilter(EfLoggingFilter)
+        );
+
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            optionsBuilder.UseSqlServer(@"Data Source=.\;Initial Catalog=reconcilerefcore;Integrated Security=true;TrustServerCertificate=True");
+            optionsBuilder
+                .UseLoggerFactory(ConsoleLoggerFactory)
+                .EnableSensitiveDataLogging()
+                .UseSqlServer(@"Data Source=.\;Initial Catalog=reconcilerefcore;Integrated Security=true;TrustServerCertificate=True")
+                ;
             //optionsBuilder.UseInMemoryDatabase("Reconciler");
         }
 
