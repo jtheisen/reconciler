@@ -4,8 +4,6 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
 using System.Reflection;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Internal;
 
 #if EF6
 using System.Data.Entity;
@@ -13,6 +11,8 @@ using System.Data.Entity;
 
 #if EFCORE
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Internal;
 #endif
 
 namespace MonkeyBusters.Reconciliation.Internal
@@ -69,17 +69,17 @@ namespace MonkeyBusters.Reconciliation.Internal
             var attachedEntityKey = db.GetEntityKey(attachedEntity);
             var templateEntityKey = db.GetEntityKey(templateEntity);
 
-            if (templateEntityKey != null && attachedEntityKey != null && templateEntityKey == attachedEntityKey)
+            if (templateEntityKey is not null && attachedEntityKey is not null && templateEntityKey == attachedEntityKey)
             {
-                await db.ReconcileAsync(null, attachedEntity, templateEntity, extent, nesting);
+                await db.ReconcileCoreAsync(null, attachedEntity, templateEntity, extent, nesting);
             }
             else
             {
                 if (attachedEntity != null && removeOrphans)
                 {
-                    if (attachedEntityKey == null) throw new Exception("Unexpectedly trying to remove entity without key");
+                    if (attachedEntityKey is null) throw new Exception("Found attached entity to delete without key");
 
-                    await db.ReconcileAsync(null, attachedEntity, null, extent, nesting);
+                    await db.ReconcileCoreAsync(null, attachedEntity, null, extent, nesting);
 
                     db.RemoveEntity(attachedEntity);
                 }
@@ -89,10 +89,14 @@ namespace MonkeyBusters.Reconciliation.Internal
                     void Link(F entityToLink)
                     {
                         propertyInfo.SetValue(attachedBaseEntity, entityToLink);
+
+                        Console.WriteLine($"set to nav prop in {attachedBaseEntity} of state {db.Entry(attachedBaseEntity).State}");
+
+                        db.LogTrace(nesting, "after setting value");
                     }
 
                     // The attached entity isn't passed as, if it exists, is the one we deleted above.
-                    await db.ReconcileAsync(Link, null, templateEntity, extent, nesting);
+                    await db.ReconcileCoreAsync(Link, null, templateEntity, extent, nesting);
                 }
             }
         }
@@ -170,7 +174,7 @@ namespace MonkeyBusters.Reconciliation.Internal
 
             foreach (var e in toRemove)
             {
-                await db.ReconcileAsync(null, e, null, extent, nesting);
+                await db.ReconcileCoreAsync(null, e, null, extent, nesting);
 
                 db.RemoveEntity(e);
             }
@@ -185,7 +189,7 @@ namespace MonkeyBusters.Reconciliation.Internal
                 //db.Entry(e).State = EntityState.Added;
                 //db.SetState(e, EntityState.Added, extent);
 
-                await db.ReconcileAsync(Link, e, e, extent, nesting);
+                await db.ReconcileCoreAsync(Link, e, e, extent, nesting);
 
 
                 //db.ChangeTracker.DetectChanges();
@@ -195,7 +199,7 @@ namespace MonkeyBusters.Reconciliation.Internal
 
             foreach (var pair in toUpdate)
             {
-                await db.ReconcileAsync(null, pair.AttachedEntity, pair.TemplateEntity, extent, nesting);
+                await db.ReconcileCoreAsync(null, pair.AttachedEntity, pair.TemplateEntity, extent, nesting);
             }
         }
 
@@ -449,16 +453,20 @@ namespace System.Data.Entity
 namespace Microsoft.EntityFrameworkCore
 #endif
 {
+#if EFCORE
     using Microsoft.Extensions.Logging;
+#endif
     using MonkeyBusters.Reconciliation.Internal;
     using System.Text;
 
+#if EFCORE
     public interface IReconcilerLoggerProvider
     {
         ILogger ReconcilerLogger { get; }
 
         Boolean LogDebugView { get; }
     }
+#endif
 
     /// <summary>
     /// The public interface to the Reconciler.
@@ -476,7 +484,7 @@ namespace Microsoft.EntityFrameworkCore
         public static Task<E> ReconcileAsync<E>(this DbContext db, E templateEntity, Action<ExtentBuilder<E>> extent)
             where E : class
         {
-            return db.ReconcileAsync(null, null, templateEntity, extent, 0);
+            return db.ReconcileWithPreparationAsync(null, null, templateEntity, extent, 0);
         }
 
         /// <summary>
@@ -490,7 +498,7 @@ namespace Microsoft.EntityFrameworkCore
         public static async Task<E> ReconcileAndSaveChangesAsync<E>(this DbContext db, E templateEntity, Action<ExtentBuilder<E>> extent)
             where E : class
         {
-            var attachedEntity = await db.ReconcileAsync(null, null, templateEntity, extent, 0);
+            var attachedEntity = await db.ReconcileWithPreparationAsync(null, null, templateEntity, extent, 0);
             await db.SaveChangesAsync();
             return attachedEntity;
         }
@@ -527,23 +535,35 @@ namespace Microsoft.EntityFrameworkCore
             return task.Result;
         }
 
-        /// <summary>
-        /// Reconciles the stored entity graph extending as far as described by the given extent with the one given by entity.
-        /// It makes a number of load requests from the store, but all modifications are merely scheduled in the context.
-        /// This overload takes a prefetched attached entity that can allow the skipping of the load request in case of a
-        /// trivial extent.
-        /// </summary>
-        /// <param name="db">The context.</param>
-        /// <param name="attachedEntity">The prefetched graph to reconcile.</param>
-        /// <param name="templateEntity">The detached graph to reconcile with.</param>
-        /// <param name="extent">The extent of the subgraph to reconcile.</param>
-        /// <returns>The attached entity.</returns>
-        internal static async Task<E> ReconcileAsync<E>(this DbContext db, Action<E> linkWithParent, E attachedEntity, E templateEntity, Action<ExtentBuilder<E>> extent, Int32 nesting)
+        internal static async Task<E> ReconcileWithPreparationAsync<E>(this DbContext db, Action<E> linkWithParent, E attachedEntity, E templateEntity, Action<ExtentBuilder<E>> extent, Int32 nesting)
             where E : class
         {
-            // FIXME: We want to be able to deal with unset foreign keys, perhaps this helps:
-            // https://stackoverflow.com/questions/4384081/read-foreign-key-metadata-programatically-with-entity-framework-4
+#if EFCORE
+            var originalCascadeDeleteTiming = db.ChangeTracker.CascadeDeleteTiming;
 
+            db.ChangeTracker.CascadeDeleteTiming = ChangeTracking.CascadeTiming.Never;
+
+            // Not sure if we ever will need this one:
+            //db.ChangeTracker.DeleteOrphansTiming = ChangeTracking.CascadeTiming.Never;
+
+            try
+            {
+                return await db.ReconcileCoreAsync(linkWithParent, attachedEntity, templateEntity, extent, nesting);
+            }
+            finally
+            {
+                db.ChangeTracker.CascadeDeleteTiming = originalCascadeDeleteTiming;
+            }
+#endif
+
+#if EF6
+            return await db.ReconcileCoreAsync(linkWithParent, attachedEntity, templateEntity, extent, nesting);
+#endif
+        }
+
+        internal static async Task<E> ReconcileCoreAsync<E>(this DbContext db, Action<E> linkWithParent, E attachedEntity, E templateEntity, Action<ExtentBuilder<E>> extent, Int32 nesting)
+            where E : class
+        {
             db.LogTrace(nesting, "> ReconcileAsync");
 
             var builder = new ExtentBuilder<E>();
@@ -571,9 +591,6 @@ namespace Microsoft.EntityFrameworkCore
             
             if (doesEntityNeedAdding)
             {
-                //attachedEntity = db.Add(templateEntity).Entity;
-                //return attachedEntity;
-
                 attachedEntity = db.AddEntity(templateEntity);
 
                 db.LogTrace(nesting, "  added new entity");
@@ -584,11 +601,14 @@ namespace Microsoft.EntityFrameworkCore
                 linkWithParent(attachedEntity);
             }
 
-            // Newer versions of EF Core need the new key values of a replaced related entity
-            // set before the old one is deleted (if it's deleted in the same change set); however,
-            // we need to preserve the old nav props for the recursive reconciliation work we now have
-            // do do after.
-            var cloneOfAttachedEntity = Properties.CloneEntity(attachedEntity);
+            foreach (var reconciler in builder.reconcilers)
+            {
+                db.LogTrace(nesting, "  > reconciler {reconciler}", reconciler);
+
+                await reconciler.ReconcileAsync(db, attachedEntity, templateEntity, nesting + 1);
+
+                db.LogTrace(nesting, "  < reconciler {reconciler}", reconciler);
+            }
 
             // An entity in the added state does not need updating and UpdateEntity fails with
             // database-generated keys.
@@ -602,15 +622,6 @@ namespace Microsoft.EntityFrameworkCore
             foreach (var property in builder.properties)
             {
                 property.Modify(db, attachedEntity, templateEntity);
-            }
-
-            foreach (var reconciler in builder.reconcilers)
-            {
-                db.LogTrace(nesting, "  > reconciler {reconciler}", reconciler);
-
-                await reconciler.ReconcileAsync(db, cloneOfAttachedEntity, templateEntity, nesting + 1);
-
-                db.LogTrace(nesting, "  < reconciler {reconciler}", reconciler);
             }
 
             db.LogTrace(nesting, "< ReconcileAsync");
@@ -699,6 +710,7 @@ namespace Microsoft.EntityFrameworkCore
 
         internal static void LogTrace(this DbContext db, Int32 nesting, String message, params Object[] args)
         {
+#if EFCORE
             if (db is IReconcilerLoggerProvider provider && provider.ReconcilerLogger is ILogger logger)
             {
                 if (logger.IsEnabled(LogLevel.Trace))
@@ -723,6 +735,7 @@ namespace Microsoft.EntityFrameworkCore
                     logger.LogTrace(b.ToString(), args);
                 }
             }
+#endif
         }
     }
 

@@ -134,6 +134,18 @@ namespace MonkeyBusters.Reconciliation.Internal
             return newEntity;
         }
 
+        public static E CloneEntity2<E>(this DbContext db, E templateEntity)
+            where E : class
+        {
+            var type = templateEntity.GetType();
+
+            var clone = Activator.CreateInstance(type) as E ?? throw new Exception($"Unable to create instance for {type}");
+
+            db.Entry(clone).CurrentValues.SetValues(templateEntity);
+
+            return clone;
+        }
+
         /// <summary>
         /// Updates an attached entity from the values of a detached one.
         /// </summary>

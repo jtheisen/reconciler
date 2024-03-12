@@ -19,6 +19,7 @@ using DbEntityEntry = Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry;
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestPlatform.CommunicationUtilities;
 using System.Text;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 #endif
 
 namespace Reconciler.Tests
@@ -207,17 +208,12 @@ namespace Reconciler.Tests
             SaveGraph(original);
 
             {
-                Console.WriteLine("Beginning of test reconciliation");
+                Console.WriteLine("Beginning of test reconciliationto target:\n" + targetJson);
 
                 var db = new Context();
 
-                Console.WriteLine("TestGraph reconciling to target:\n" + targetJson);
+                db.Reconcile(CloneTarget(), extent);
 
-                var attachedEntity = db.Reconcile(CloneTarget(), extent);
-
-                Console.WriteLine("EF debug view:\n" + db.ChangeTracker.DebugView.ShortView);
-
-                //var entries = db.ChangeTracker.Entries().Select(e => new EntityWithState { Entry = e }).ToArray();
                 db.SaveChanges();
             }
 
@@ -552,8 +548,13 @@ namespace Reconciler.Tests
             var reloaded = new Context().AutoIncRoots
                 .OrderBy(e => e.Id)
                 .AsNoTracking()
+#if EFCORE
                 .Include(e => e.Manys)
                     .ThenInclude(e => e.ManyManys)
+#endif
+#if EF6
+                .Include("Manys.ManyManys")
+#endif
                 .Single()
                     ;
 
@@ -584,15 +585,20 @@ namespace Reconciler.Tests
 
             new Context().ReconcileAndSaveChanges(root, m0 => m0
                 .WithMany(e0 => e0.Manys, m1 => m1
-                    .WithMany(e1 => e1.ManyManys)
+                    .WithOne(e1 => e1.ManyOne)
                 )
             );
 
             var reloaded = new Context().AutoIncRoots
                 .OrderBy(e => e.Id)
                 .AsNoTracking()
+#if EFCORE
                 .Include(e => e.Manys)
                     .ThenInclude(e => e.ManyOne)
+#endif
+#if EF6
+                .Include("Manys.ManyOne")
+#endif
                 .Single()
                     ;
 
@@ -601,6 +607,7 @@ namespace Reconciler.Tests
             Assert.IsNotNull(reloaded.Manys.Skip(1).First().ManyOne);
         }
 
+#if EFCORE
         [TestMethod]
         public void TestAddToCollectionManually()
         {
@@ -637,6 +644,47 @@ namespace Reconciler.Tests
             db.ChangeTracker.DetectChanges();
 
             Assert.AreEqual(EntityState.Modified, db.Entry(personTag).State);
+        }
+
+        [TestMethod]
+        public void TestAddScalarManually()
+        {
+            ClearDb();
+
+            {
+                var db = new Context();
+
+                var root1 = new AutoIncRoot();
+
+                var root1many1 = new AutoIncMany();
+
+                root1.Manys.Add(root1many1);
+
+                var root1many1one1 = new AutoIncManyOne();
+
+                root1many1.ManyOne = root1many1one1;
+
+                db.AutoIncRoots.Add(root1);
+
+                db.SaveChanges();
+            }
+
+            {
+                var db = new Context();
+
+                var root1 = db.AutoIncRoots.Single();
+
+                var root1many1 = db.AutoIncManys.Single();
+
+                var root1many1one1 = db.AutoIncManyOne.Single();
+                db.AutoIncManyOne.Remove(root1many1one1);
+
+                var root1many1one2 = new AutoIncManyOne();
+
+                root1many1.ManyOne = root1many1one2;
+
+                db.SaveChanges();
+            }
         }
 
         [TestMethod]
@@ -678,5 +726,6 @@ namespace Reconciler.Tests
                 db.SaveChanges();
             }
         }
+#endif
     }
 }
