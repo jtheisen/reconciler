@@ -69,7 +69,7 @@ namespace MonkeyBusters.Reconciliation.Internal
             var attachedEntityKey = db.GetEntityKey(attachedEntity);
             var templateEntityKey = db.GetEntityKey(templateEntity);
 
-            if (templateEntityKey is not null && attachedEntityKey is not null && templateEntityKey == attachedEntityKey)
+            if (!(templateEntityKey is null) && !(attachedEntityKey is null) && templateEntityKey == attachedEntityKey)
             {
                 await db.ReconcileCoreAsync(null, attachedEntity, templateEntity, extent, nesting);
             }
@@ -696,7 +696,7 @@ namespace Microsoft.EntityFrameworkCore
         {
             action(db, entity);
 
-            if (extent is not null)
+            if (extent != null)
             {
                 var builder = new ExtentBuilder<E>();
                 extent(builder);
