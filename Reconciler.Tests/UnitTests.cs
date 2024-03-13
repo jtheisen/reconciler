@@ -726,6 +726,95 @@ namespace Reconciler.Tests
                 db.SaveChanges();
             }
         }
+
+        [TestMethod]
+        public void TestMoveSputnikFromEarthToMars()
+        {
+            ClearDb();
+
+            var db = new Context();
+
+            Planet earth, mars;
+
+            Moon sputnik;
+
+            var sun = new Star
+            {
+                Id = "sun",
+                Planets = {
+                    (earth = new Planet {
+                        Id = "earth",
+                        Moons =
+                        {
+                            (sputnik = new Moon { Id = "sputnik" })
+                        }
+                    }),
+                    (mars = new Planet {
+                        Id = "mars"
+                    })
+                }
+            };
+
+            db.Stars.Add(sun);
+
+            db.SaveChanges();
+
+            earth.Moons.Clear();
+
+            Assert.AreEqual(EntityState.Modified, db.Entry(sputnik).State);
+            Assert.IsNull(sputnik.PlanetId);
+
+            mars.Moons.Add(sputnik);
+
+            db.ChangeTracker.DetectChanges();
+
+            Assert.AreEqual(EntityState.Modified, db.Entry(sputnik).State);
+            Assert.AreEqual(mars.Id, sputnik.PlanetId);
+        }
+
+        [TestMethod]
+        public void TestMoveSputnikToMarsFromEarth()
+        {
+            ClearDb();
+
+            var db = new Context();
+
+            Planet earth, mars;
+
+            Moon sputnik;
+
+            var sun = new Star
+            {
+                Id = "sun",
+                Planets = {
+                    (earth = new Planet {
+                        Id = "earth",
+                        Moons =
+                        {
+                            (sputnik = new Moon { Id = "sputnik" })
+                        }
+                    }),
+                    (mars = new Planet {
+                        Id = "mars"
+                    })
+                }
+            };
+
+            db.Stars.Add(sun);
+
+            db.SaveChanges();
+
+            mars.Moons.Add(sputnik);
+
+
+            db.Moons.Where(m => m.Id == "sputnik").Single();
+
+            //db.ChangeTracker.DetectChanges();
+
+            //Assert.AreEqual(EntityState.Modified, db.Entry(sputnik).State);
+            Assert.AreEqual(mars.Id, sputnik.PlanetId);
+            Assert.AreEqual(0, earth.Moons.Count);
+        }
 #endif
     }
 }
