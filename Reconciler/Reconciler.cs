@@ -17,6 +17,13 @@ using Microsoft.EntityFrameworkCore.Internal;
 
 namespace MonkeyBusters.Reconciliation.Internal
 {
+    enum ReconcileStep
+    {
+        Load,
+        Modify
+    }
+
+
     /// <summary>
     /// Reconcilers are implemented for scalar and collection navigational properties
     /// and are responsible for syncing them by inserting, deleting and updating
@@ -26,7 +33,7 @@ namespace MonkeyBusters.Reconciliation.Internal
     {
         public abstract IQueryable<E> AugmentInclude(IQueryable<E> query);
 
-        public abstract Task ReconcileAsync(DbContext db, E attachedEntity, E templateEntity, Int32 nesting);
+        public abstract Task ReconcileAsync(DbContext db, ReconcileStep step, E attachedEntity, E templateEntity, Int32 nesting);
 
         public abstract Task LoadAsync(DbContext db, E attachedEntity);
 
@@ -59,7 +66,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         public override IQueryable<E> AugmentInclude(IQueryable<E> query)
             => query.Include(selectorExpression);
 
-        public override async Task ReconcileAsync(DbContext db, E attachedBaseEntity, E templateBaseEntity, Int32 nesting)
+        public override async Task ReconcileAsync(DbContext db, ReconcileStep step, E attachedBaseEntity, E templateBaseEntity, Int32 nesting)
         {
             var attachedEntity = selector(attachedBaseEntity);
             var templateEntity = templateBaseEntity != null
@@ -71,7 +78,7 @@ namespace MonkeyBusters.Reconciliation.Internal
 
             if (!(templateEntityKey is null) && !(attachedEntityKey is null) && templateEntityKey == attachedEntityKey)
             {
-                await db.ReconcileCoreAsync(null, attachedEntity, templateEntity, extent, nesting);
+                await db.ReconcileCoreAsync(step, null, attachedEntity, templateEntity, extent, nesting);
             }
             else
             {
@@ -79,7 +86,7 @@ namespace MonkeyBusters.Reconciliation.Internal
                 {
                     if (attachedEntityKey is null) throw new Exception("Found attached entity to delete without key");
 
-                    await db.ReconcileCoreAsync(null, attachedEntity, null, extent, nesting);
+                    await db.ReconcileCoreAsync(step, null, attachedEntity, null, extent, nesting);
 
                     db.RemoveEntity(attachedEntity);
                 }
@@ -96,7 +103,7 @@ namespace MonkeyBusters.Reconciliation.Internal
                     }
 
                     // The attached entity isn't passed as, if it exists, is the one we deleted above.
-                    await db.ReconcileCoreAsync(Link, null, templateEntity, extent, nesting);
+                    await db.ReconcileCoreAsync(step, Link, null, templateEntity, extent, nesting);
                 }
             }
         }
@@ -138,7 +145,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         public override IQueryable<E> AugmentInclude(IQueryable<E> query)
             => query.Include(this.selectorExpression);
 
-        public override async Task ReconcileAsync(DbContext db, E attachedEntity, E templateEntity, Int32 nesting)
+        public override async Task ReconcileAsync(DbContext db, ReconcileStep step, E attachedEntity, E templateEntity, Int32 nesting)
         {
             // FIXME: Tests are failing as we're trying to remove entities with default keys
 
@@ -174,7 +181,7 @@ namespace MonkeyBusters.Reconciliation.Internal
 
             foreach (var e in toRemove)
             {
-                await db.ReconcileCoreAsync(null, e, null, extent, nesting);
+                await db.ReconcileCoreAsync(step, null, e, null, extent, nesting);
 
                 db.RemoveEntity(e);
             }
@@ -189,7 +196,7 @@ namespace MonkeyBusters.Reconciliation.Internal
                 //db.Entry(e).State = EntityState.Added;
                 //db.SetState(e, EntityState.Added, extent);
 
-                await db.ReconcileCoreAsync(Link, e, e, extent, nesting);
+                await db.ReconcileCoreAsync(step, Link, e, e, extent, nesting);
 
 
                 //db.ChangeTracker.DetectChanges();
@@ -199,7 +206,7 @@ namespace MonkeyBusters.Reconciliation.Internal
 
             foreach (var pair in toUpdate)
             {
-                await db.ReconcileCoreAsync(null, pair.AttachedEntity, pair.TemplateEntity, extent, nesting);
+                await db.ReconcileCoreAsync(step, null, pair.AttachedEntity, pair.TemplateEntity, extent, nesting);
             }
         }
 
@@ -484,7 +491,7 @@ namespace Microsoft.EntityFrameworkCore
         public static Task<E> ReconcileAsync<E>(this DbContext db, E templateEntity, Action<ExtentBuilder<E>> extent)
             where E : class
         {
-            return db.ReconcileWithPreparationAsync(null, null, templateEntity, extent, 0);
+            return db.ReconcileWithPreparationAsync(templateEntity, extent, 0);
         }
 
         /// <summary>
@@ -498,7 +505,7 @@ namespace Microsoft.EntityFrameworkCore
         public static async Task<E> ReconcileAndSaveChangesAsync<E>(this DbContext db, E templateEntity, Action<ExtentBuilder<E>> extent)
             where E : class
         {
-            var attachedEntity = await db.ReconcileWithPreparationAsync(null, null, templateEntity, extent, 0);
+            var attachedEntity = await db.ReconcileWithPreparationAsync(templateEntity, extent, 0);
             await db.SaveChangesAsync();
             return attachedEntity;
         }
@@ -535,7 +542,7 @@ namespace Microsoft.EntityFrameworkCore
             return task.Result;
         }
 
-        internal static async Task<E> ReconcileWithPreparationAsync<E>(this DbContext db, Action<E> linkWithParent, E attachedEntity, E templateEntity, Action<ExtentBuilder<E>> extent, Int32 nesting)
+        internal static async Task<E> ReconcileWithPreparationAsync<E>(this DbContext db, E templateEntity, Action<ExtentBuilder<E>> extent, Int32 nesting)
             where E : class
         {
 #if EFCORE
@@ -548,7 +555,9 @@ namespace Microsoft.EntityFrameworkCore
 
             try
             {
-                return await db.ReconcileCoreAsync(linkWithParent, attachedEntity, templateEntity, extent, nesting);
+                var attachedEntity = await db.ReconcileCoreAsync(ReconcileStep.Load, null, null, templateEntity, extent, nesting);
+
+                return await db.ReconcileCoreAsync(ReconcileStep.Modify, null, attachedEntity, templateEntity, extent, nesting);
             }
             finally
             {
@@ -561,10 +570,10 @@ namespace Microsoft.EntityFrameworkCore
 #endif
         }
 
-        internal static async Task<E> ReconcileCoreAsync<E>(this DbContext db, Action<E> linkWithParent, E attachedEntity, E templateEntity, Action<ExtentBuilder<E>> extent, Int32 nesting)
+        internal static async Task<E> ReconcileCoreAsync<E>(this DbContext db, ReconcileStep step, Action<E> linkWithParent, E attachedEntity, E templateEntity, Action<ExtentBuilder<E>> extent, Int32 nesting)
             where E : class
         {
-            db.LogTrace(nesting, "> ReconcileAsync");
+            db.LogTrace(nesting, "> ReconcileAsync {step}", step);
 
             var builder = new ExtentBuilder<E>();
             extent?.Invoke(builder);
@@ -605,7 +614,7 @@ namespace Microsoft.EntityFrameworkCore
             {
                 db.LogTrace(nesting, "  > reconciler {reconciler}", reconciler);
 
-                await reconciler.ReconcileAsync(db, attachedEntity, templateEntity, nesting + 1);
+                await reconciler.ReconcileAsync(db, step, attachedEntity, templateEntity, nesting + 1);
 
                 db.LogTrace(nesting, "  < reconciler {reconciler}", reconciler);
             }
