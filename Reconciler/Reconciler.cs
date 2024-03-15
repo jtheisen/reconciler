@@ -68,10 +68,8 @@ namespace MonkeyBusters.Reconciliation.Internal
 
         public override async Task ReconcileAsync(DbContext db, ReconcileStep step, E attachedBaseEntity, E templateBaseEntity, Int32 nesting)
         {
-            var attachedEntity = selector(attachedBaseEntity);
-            var templateEntity = templateBaseEntity != null
-                ? selector(templateBaseEntity)
-                : null;
+            var attachedEntity = attachedBaseEntity != null ? selector(attachedBaseEntity) : null;
+            var templateEntity = templateBaseEntity != null ? selector(templateBaseEntity) : null;
 
             var attachedEntityKey = db.GetEntityKey(attachedEntity);
             var templateEntityKey = db.GetEntityKey(templateEntity);
@@ -86,9 +84,15 @@ namespace MonkeyBusters.Reconciliation.Internal
                 {
                     if (attachedEntityKey is null) throw new Exception("Found attached entity to delete without key");
 
+                    // This is also just for the deletion and so does not need to execute if removeOrphans is false
                     await db.ReconcileCoreAsync(step, null, attachedEntity, null, extent, nesting);
 
-                    db.RemoveEntity(attachedEntity);
+                    if (step == ReconcileStep.Modify)
+                    {
+                        // "removeOrphans" means we always remove the entity - if the user wants to move it,
+                        // he should use .WithShared.
+                        db.RemoveEntity(attachedEntity);
+                    }
                 }
 
                 if (templateEntity != null)
@@ -96,8 +100,6 @@ namespace MonkeyBusters.Reconciliation.Internal
                     void Link(F entityToLink)
                     {
                         propertyInfo.SetValue(attachedBaseEntity, entityToLink);
-
-                        Console.WriteLine($"set to nav prop in {attachedBaseEntity} of state {db.Entry(attachedBaseEntity).State}");
 
                         db.LogTrace(nesting, "after setting value");
                     }
@@ -149,7 +151,9 @@ namespace MonkeyBusters.Reconciliation.Internal
         {
             // FIXME: Tests are failing as we're trying to remove entities with default keys
 
-            var attachedCollection = selector(attachedEntity);
+            var attachedCollection = attachedEntity != null ?
+                selector(attachedEntity)
+                : new List<F>();
             var templateCollection = templateEntity != null
                 ? selector(templateEntity).ToArray()
                 : Enumerable.Empty<F>();
@@ -183,7 +187,12 @@ namespace MonkeyBusters.Reconciliation.Internal
             {
                 await db.ReconcileCoreAsync(step, null, e, null, extent, nesting);
 
-                db.RemoveEntity(e);
+                if (step == ReconcileStep.Modify)
+                {
+                    // EF Core can track whether the entity needs removal by virtue of being
+                    // orphaned, hence it's enough to just remove it from the parent collection.
+                    attachedCollection.Remove(e);
+                }
             }
 
             foreach (var e in toAdd)
@@ -193,15 +202,7 @@ namespace MonkeyBusters.Reconciliation.Internal
                     attachedCollection.Add(f);
                 }
 
-                //db.Entry(e).State = EntityState.Added;
-                //db.SetState(e, EntityState.Added, extent);
-
-                await db.ReconcileCoreAsync(step, Link, e, e, extent, nesting);
-
-
-                //db.ChangeTracker.DetectChanges();
-
-                //var state = db.Entry(e).State;
+                await db.ReconcileCoreAsync(step, Link, null, e, extent, nesting);
             }
 
             foreach (var pair in toUpdate)
@@ -551,7 +552,7 @@ namespace Microsoft.EntityFrameworkCore
             db.ChangeTracker.CascadeDeleteTiming = ChangeTracking.CascadeTiming.Never;
 
             // Not sure if we ever will need this one:
-            //db.ChangeTracker.DeleteOrphansTiming = ChangeTracking.CascadeTiming.Never;
+            //db.ChangeTracker.DeleteOrphansTiming = ChangeTracking.CascadeTiming.OnSaveChanges;
 
             try
             {
@@ -566,7 +567,9 @@ namespace Microsoft.EntityFrameworkCore
 #endif
 
 #if EF6
-            return await db.ReconcileCoreAsync(linkWithParent, attachedEntity, templateEntity, extent, nesting);
+            var attachedEntity = await db.ReconcileCoreAsync(ReconcileStep.Load, null, null, templateEntity, extent, nesting);
+
+            return await db.ReconcileCoreAsync(ReconcileStep.Modify, null, attachedEntity, templateEntity, extent, nesting);
 #endif
         }
 
@@ -578,36 +581,46 @@ namespace Microsoft.EntityFrameworkCore
             var builder = new ExtentBuilder<E>();
             extent?.Invoke(builder);
 
-            // Try to load an existing entity and their navigational properties unless there are none or we've added the entity
-            // -- and added entity in this situation happens only in the case of database-generated keys where we can know
-            // from the key that the entity must be added and can't already exist in storage. In that particular case, no
-            // navigation properties need loading either.
-            if (attachedEntity == null || (db.Entry(attachedEntity).State != EntityState.Added && builder.reconcilers.Count != 0))
+            if (step == ReconcileStep.Load)
             {
-                // In case of removals, the templateEntity is null, and otherwise
-                // attachedEntity is often null as it's not always preloaded by
-                // the caller.
-                var entityToTakeTheKeyFrom = templateEntity ?? attachedEntity;
+                // Try to load an existing entity and their navigational properties unless there are none or we've added the entity
+                // -- and added entity in this situation happens only in the case of database-generated keys where we can know
+                // from the key that the entity must be added and can't already exist in storage. In that particular case, no
+                // navigation properties need loading either.
+                if (attachedEntity == null || (db.Entry(attachedEntity).State != EntityState.Added && builder.reconcilers.Count != 0))
+                {
+                    // In case of removals, the templateEntity is null, and otherwise
+                    // attachedEntity is often null as it's not always preloaded by
+                    // the caller.
+                    var entityToTakeTheKeyFrom = templateEntity ?? attachedEntity;
 
-                attachedEntity = await builder.reconcilers
-                    .Aggregate(db.GetEntity(entityToTakeTheKeyFrom), (q, r) => r.AugmentInclude(q))
-                    .FirstOrDefaultAsync();
+                    attachedEntity = await builder.reconcilers
+                        .Aggregate(db.GetEntity(entityToTakeTheKeyFrom), (q, r) => r.AugmentInclude(q))
+                        .FirstOrDefaultAsync();
 
-                db.LogTrace(nesting, "  loaded entity");
+                    db.LogTrace(nesting, "  loaded entity");
+                }
             }
 
             var doesEntityNeedAdding = attachedEntity == null || (db.Entry(attachedEntity).State == EntityState.Deleted && templateEntity != null);
-            
+
             if (doesEntityNeedAdding)
             {
-                attachedEntity = db.AddEntity(templateEntity);
+                if (step == ReconcileStep.Modify)
+                {
+                    attachedEntity = db.AddEntity(templateEntity);
 
-                db.LogTrace(nesting, "  added new entity");
-            }
+                    if (linkWithParent != null)
+                    {
+                        linkWithParent(attachedEntity);
+                    }
 
-            if (linkWithParent != null)
-            {
-                linkWithParent(attachedEntity);
+                    db.LogTrace(nesting, "  added new entity");
+                }
+                else
+                {
+                    //attachedEntity = templateEntity;
+                }
             }
 
             foreach (var reconciler in builder.reconcilers)
@@ -619,18 +632,21 @@ namespace Microsoft.EntityFrameworkCore
                 db.LogTrace(nesting, "  < reconciler {reconciler}", reconciler);
             }
 
-            // An entity in the added state does not need updating and UpdateEntity fails with
-            // database-generated keys.
-            if (!doesEntityNeedAdding && templateEntity != null && db.Entry(attachedEntity).State != EntityState.Added)
+            if (step == ReconcileStep.Modify)
             {
-                db.UpdateEntity(attachedEntity, templateEntity);
+                // An entity in the added state does not need updating and UpdateEntity fails with
+                // database-generated keys.
+                if (!doesEntityNeedAdding && templateEntity != null && db.Entry(attachedEntity).State != EntityState.Added)
+                {
+                    db.UpdateEntity(attachedEntity, templateEntity);
 
-                db.LogTrace(nesting, "  updated entity");
-            }
+                    db.LogTrace(nesting, "  updated entity");
+                }
 
-            foreach (var property in builder.properties)
-            {
-                property.Modify(db, attachedEntity, templateEntity);
+                foreach (var property in builder.properties)
+                {
+                    property.Modify(db, attachedEntity, templateEntity);
+                }
             }
 
             db.LogTrace(nesting, "< ReconcileAsync");

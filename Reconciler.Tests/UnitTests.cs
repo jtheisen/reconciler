@@ -437,7 +437,7 @@ namespace Reconciler.Tests
 
 
         [TestMethod]
-        public void TestMoveOneOrphaneOtAnotherParrent()
+        public void TestMoveOneOrphanToAnotherParent()
         {
             Action<ExtentBuilder<Person>> extent = map => map.WithMany(p => p.EmailAddresses)
                                                              .WithOne(p => p.Address);
@@ -806,12 +806,8 @@ namespace Reconciler.Tests
 
             mars.Moons.Add(sputnik);
 
+            db.ChangeTracker.DetectChanges();
 
-            db.Moons.Where(m => m.Id == "sputnik").Single();
-
-            //db.ChangeTracker.DetectChanges();
-
-            //Assert.AreEqual(EntityState.Modified, db.Entry(sputnik).State);
             Assert.AreEqual(mars.Id, sputnik.PlanetId);
             Assert.AreEqual(0, earth.Moons.Count);
         }
