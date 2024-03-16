@@ -7,6 +7,7 @@ using System.Reflection;
 
 #if EF6
 using System.Data.Entity;
+using System.Data.Entity.Core;
 #endif
 
 #if EFCORE
@@ -40,6 +41,12 @@ namespace MonkeyBusters.Reconciliation.Internal
         public abstract void ForEach(DbContext db, E entity, Action<DbContext, Object> action);
 
         public abstract void Normalize(DbContext db, E entity);
+
+#if EF6
+        public abstract void Reset();
+
+        public abstract void RemoveOrphans(DbContext db);
+#endif
     }
 
     class EntityReconciler<E, F> : Reconciler<E>
@@ -49,15 +56,15 @@ namespace MonkeyBusters.Reconciliation.Internal
         private readonly Expression<Func<E, F>> selectorExpression;
         private readonly PropertyInfo propertyInfo;
         private readonly Func<E, F> selector;
-        private readonly Action<ExtentBuilder<F>> extent;
+        private readonly IExtent<F> extent;
         private readonly Boolean removeOrphans;
 
-        public EntityReconciler(Expression<Func<E, F>> selector, Action<ExtentBuilder<F>> mapping, Boolean removeOrphans)
+        public EntityReconciler(Expression<Func<E, F>> selector, IExtent<F> extent, Boolean removeOrphans)
         {
             this.selectorExpression = selector;
             this.propertyInfo = Properties.GetPropertyInfo(selector);
             this.selector = selector.Compile();
-            this.extent = mapping;
+            this.extent = extent;
             this.removeOrphans = removeOrphans;
         }
 
@@ -125,6 +132,18 @@ namespace MonkeyBusters.Reconciliation.Internal
         }
 
         public override void Normalize(DbContext db, E entity) => db.Normalize(selector(entity), extent);
+
+#if EF6
+        public override void Reset()
+        {
+            extent.Reset();
+        }
+
+        public override void RemoveOrphans(DbContext db)
+        {
+            extent.RemoveOrphans(db);
+        }
+#endif
     }
 
     class CollectionReconciler<E, F> : Reconciler<E>
@@ -133,9 +152,9 @@ namespace MonkeyBusters.Reconciliation.Internal
     {
         private readonly Expression<Func<E, ICollection<F>>> selectorExpression;
         private readonly Func<E, ICollection<F>> selector;
-        private readonly Action<ExtentBuilder<F>> extent;
+        private readonly IExtent<F> extent;
 
-        public CollectionReconciler(Expression<Func<E, ICollection<F>>> selector, Action<ExtentBuilder<F>> extent)
+        public CollectionReconciler(Expression<Func<E, ICollection<F>>> selector, IExtent<F> extent)
         {
             this.selectorExpression = selector;
             this.selector = selector.Compile();
@@ -192,6 +211,10 @@ namespace MonkeyBusters.Reconciliation.Internal
                     // EF Core can track whether the entity needs removal by virtue of being
                     // orphaned, hence it's enough to just remove it from the parent collection.
                     attachedCollection.Remove(e);
+
+#if EF6
+                    TrackOrphan(db.GetEntityKey(e), e, -1);
+#endif
                 }
             }
 
@@ -203,6 +226,13 @@ namespace MonkeyBusters.Reconciliation.Internal
                 }
 
                 await db.ReconcileCoreAsync(step, Link, null, e, extent, nesting);
+
+                if (step == ReconcileStep.Modify)
+                {
+#if EF6
+                    TrackOrphan(db.GetEntityKey(e), e, +1);
+#endif
+                }
             }
 
             foreach (var pair in toUpdate)
@@ -264,6 +294,51 @@ namespace MonkeyBusters.Reconciliation.Internal
                 db.Normalize(item, extent);
             }
         }
+
+#if EF6
+        class OrphanTrackingEntry
+        {
+            public EntityKey entityKey;
+            public F entity;
+            public Int32 netCount;
+        }
+
+        private Dictionary<EntityKey, OrphanTrackingEntry> orphans;
+
+        void TrackOrphan(EntityKey key, F orphan, Int32 netCount)
+        {
+            if (!orphans.TryGetValue(key, out var entry))
+            {
+                entry = orphans[key] = new OrphanTrackingEntry
+                {
+                    entityKey = key,
+                    entity = orphan
+                };
+            }
+
+            entry.netCount += netCount;
+        }
+
+        public override void Reset()
+        {
+            orphans = new Dictionary<EntityKey, OrphanTrackingEntry>();
+
+            extent.Reset();
+        }
+
+        public override void RemoveOrphans(DbContext db)
+        {
+            foreach (var entry in orphans.Values)
+            {
+                if (entry.netCount < 0)
+                {
+                    db.RemoveEntity(entry.entity);
+                }
+            }
+
+            extent.RemoveOrphans(db);
+        }
+#endif
     }
 
     abstract class AbstractModifier<E>
@@ -335,15 +410,37 @@ namespace MonkeyBusters.Reconciliation.Internal
         }
     }
 
+    internal interface IExtent<E> where E : class
+    {
+        IReadOnlyCollection<Reconciler<E>> Reconcilers { get; }
+
+        IReadOnlyCollection<AbstractModifier<E>> Properties { get; }
+    }
+
+    public static class ExtentBuilder
+    {
+        internal static IExtent<E> Build<E>(this Action<ExtentBuilder<E>> extent)
+            where E : class
+        {
+            var builder = new ExtentBuilder<E>();
+            extent?.Invoke(builder);
+            return builder;
+        }
+    }
+
     /// <summary>
     /// Builder class for building up tree extents.
     /// </summary>
     /// <typeparam name="E">The root node entity type of the tree.</typeparam>
-    public class ExtentBuilder<E> where E : class
+    public class ExtentBuilder<E> : IExtent<E> where E : class
     {
         internal List<Reconciler<E>> reconcilers = new List<Reconciler<E>>();
 
         internal List<AbstractModifier<E>> properties = new List<AbstractModifier<E>>();
+
+        IReadOnlyCollection<Reconciler<E>> IExtent<E>.Reconcilers => reconcilers;
+
+        IReadOnlyCollection<AbstractModifier<E>> IExtent<E>.Properties => properties;
 
         /// <summary>
         /// Include a scalar navigational property in the current extent as owned - the referenced
@@ -355,7 +452,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         public ExtentBuilder<E> WithOne<F>(Expression<Func<E, F>> selector, Action<ExtentBuilder<F>> extent = null)
             where F : class
         {
-            reconcilers.Add(new EntityReconciler<E, F>(selector, extent, true));
+            reconcilers.Add(new EntityReconciler<E, F>(selector, extent.Build(), true));
             return this;
         }
 
@@ -369,7 +466,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         public ExtentBuilder<E> WithMany<F>(Expression<Func<E, ICollection<F>>> selector, Action<ExtentBuilder<F>> extent = null)
             where F : class
         {
-            reconcilers.Add(new CollectionReconciler<E, F>(selector, extent));
+            reconcilers.Add(new CollectionReconciler<E, F>(selector, extent.Build()));
             return this;
         }
 
@@ -383,7 +480,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         public ExtentBuilder<E> WithShared<F>(Expression<Func<E, F>> selector, Action<ExtentBuilder<F>> extent = null)
             where F : class
         {
-            reconcilers.Add(new EntityReconciler<E, F>(selector, extent, false));
+            reconcilers.Add(new EntityReconciler<E, F>(selector, extent.Build(), false));
             return this;
         }
 
@@ -442,11 +539,15 @@ namespace MonkeyBusters.Reconciliation.Internal
         public static void Normalize<E>(this DbContext db, E entity, Action<ExtentBuilder<E>> extent)
             where E : class
         {
+            db.Normalize(entity, extent.Build());
+        }
+
+        internal static void Normalize<E>(this DbContext db, E entity, IExtent<E> extent)
+            where E : class
+        {
             if (entity == null) throw new Exception("Entity shouldn't be null");
 
-            var builder = new ExtentBuilder<E>();
-            extent?.Invoke(builder);
-            foreach (var reconciler in builder.reconcilers)
+            foreach (var reconciler in extent.Reconcilers)
             {
                 reconciler.Normalize(db, entity);
             }
@@ -556,9 +657,11 @@ namespace Microsoft.EntityFrameworkCore
 
             try
             {
-                var attachedEntity = await db.ReconcileCoreAsync(ReconcileStep.Load, null, null, templateEntity, extent, nesting);
+                var builtExtent = extent.Build();
 
-                return await db.ReconcileCoreAsync(ReconcileStep.Modify, null, attachedEntity, templateEntity, extent, nesting);
+                var attachedEntity = await db.ReconcileCoreAsync(ReconcileStep.Load, null, null, templateEntity, builtExtent, nesting);
+
+                return await db.ReconcileCoreAsync(ReconcileStep.Modify, null, attachedEntity, templateEntity, builtExtent, nesting);
             }
             finally
             {
@@ -567,19 +670,24 @@ namespace Microsoft.EntityFrameworkCore
 #endif
 
 #if EF6
-            var attachedEntity = await db.ReconcileCoreAsync(ReconcileStep.Load, null, null, templateEntity, extent, nesting);
+            var builtExtent = extent.Build();
 
-            return await db.ReconcileCoreAsync(ReconcileStep.Modify, null, attachedEntity, templateEntity, extent, nesting);
+            var attachedEntity = await db.ReconcileCoreAsync(ReconcileStep.Load, null, null, templateEntity, builtExtent, nesting);
+
+            builtExtent.Reset();
+
+            attachedEntity = await db.ReconcileCoreAsync(ReconcileStep.Modify, null, attachedEntity, templateEntity, builtExtent, nesting);
+
+            builtExtent.RemoveOrphans(db);
+
+            return attachedEntity;
 #endif
         }
 
-        internal static async Task<E> ReconcileCoreAsync<E>(this DbContext db, ReconcileStep step, Action<E> linkWithParent, E attachedEntity, E templateEntity, Action<ExtentBuilder<E>> extent, Int32 nesting)
+        internal static async Task<E> ReconcileCoreAsync<E>(this DbContext db, ReconcileStep step, Action<E> linkWithParent, E attachedEntity, E templateEntity, IExtent<E> extent, Int32 nesting)
             where E : class
         {
             db.LogTrace(nesting, "> ReconcileAsync {step}", step);
-
-            var builder = new ExtentBuilder<E>();
-            extent?.Invoke(builder);
 
             if (step == ReconcileStep.Load)
             {
@@ -587,14 +695,14 @@ namespace Microsoft.EntityFrameworkCore
                 // -- and added entity in this situation happens only in the case of database-generated keys where we can know
                 // from the key that the entity must be added and can't already exist in storage. In that particular case, no
                 // navigation properties need loading either.
-                if (attachedEntity == null || (db.Entry(attachedEntity).State != EntityState.Added && builder.reconcilers.Count != 0))
+                if (attachedEntity == null || (db.Entry(attachedEntity).State != EntityState.Added && extent.Reconcilers.Count != 0))
                 {
                     // In case of removals, the templateEntity is null, and otherwise
                     // attachedEntity is often null as it's not always preloaded by
                     // the caller.
                     var entityToTakeTheKeyFrom = templateEntity ?? attachedEntity;
 
-                    attachedEntity = await builder.reconcilers
+                    attachedEntity = await extent.Reconcilers
                         .Aggregate(db.GetEntity(entityToTakeTheKeyFrom), (q, r) => r.AugmentInclude(q))
                         .FirstOrDefaultAsync();
 
@@ -623,7 +731,7 @@ namespace Microsoft.EntityFrameworkCore
                 }
             }
 
-            foreach (var reconciler in builder.reconcilers)
+            foreach (var reconciler in extent.Reconcilers)
             {
                 db.LogTrace(nesting, "  > reconciler {reconciler}", reconciler);
 
@@ -643,7 +751,7 @@ namespace Microsoft.EntityFrameworkCore
                     db.LogTrace(nesting, "  updated entity");
                 }
 
-                foreach (var property in builder.properties)
+                foreach (var property in extent.Properties)
                 {
                     property.Modify(db, attachedEntity, templateEntity);
                 }
@@ -664,19 +772,22 @@ namespace Microsoft.EntityFrameworkCore
         public static async Task<E> LoadExtentAsync<E>(this DbContext db, E entityToLoad, Action<ExtentBuilder<E>> extent)
             where E : class
         {
-            var builder = new ExtentBuilder<E>();
-            extent(builder);
+            return await LoadExtentAsync(db, entityToLoad, extent.Build());
+        }
 
-            var attachedEntity = await builder.reconcilers
+        internal static async Task<E> LoadExtentAsync<E>(this DbContext db, E entityToLoad, IExtent<E> extent)
+            where E : class
+        {
+            var attachedEntity = await extent.Reconcilers
                 .Aggregate(db.GetEntity(entityToLoad), (q, r) => r.AugmentInclude(q))
                 .FirstOrDefaultAsync();
 
-            foreach (var reconciler in builder.reconcilers)
+            foreach (var reconciler in extent.Reconcilers)
             {
                 await reconciler.LoadAsync(db, attachedEntity);
             }
 
-            foreach (var property in builder.properties)
+            foreach (var property in extent.Properties)
             {
                 property.Modify(db, attachedEntity, null);
             }
@@ -715,23 +826,46 @@ namespace Microsoft.EntityFrameworkCore
         {
             ForEach(db, entity, (db2, e) => db2.Entry(e).State = state, extent);
         }
-
+        
         public static void ForEach<E>(this DbContext db, E entity, Action<DbContext, Object> action, Action<ExtentBuilder<E>> extent)
+            where E : class
+        {
+            db.ForEach(entity, action, extent.Build());
+        }
+        
+        internal static void ForEach<E>(this DbContext db, E entity, Action<DbContext, Object> action, IExtent<E> extent)
             where E : class
         {
             action(db, entity);
 
             if (extent != null)
             {
-                var builder = new ExtentBuilder<E>();
-                extent(builder);
-
-                foreach (var reconciler in builder.reconcilers)
+                foreach (var reconciler in extent.Reconcilers)
                 {
                     reconciler.ForEach(db, entity, action);
                 }
             }
         }
+
+#if EF6
+        internal static void Reset<E>(this IExtent<E> extent)
+            where E : class
+        {
+            foreach (var reconciler in extent.Reconcilers)
+            {
+                reconciler.Reset();
+            }
+        }
+
+        internal static void RemoveOrphans<E>(this IExtent<E> extent, DbContext db)
+            where E : class
+        {
+            foreach (var reconciler in extent.Reconcilers)
+            {
+                reconciler.RemoveOrphans(db);
+            }
+        }
+#endif
 
         internal static void LogTrace(this DbContext db, Int32 nesting, String message, params Object[] args)
         {

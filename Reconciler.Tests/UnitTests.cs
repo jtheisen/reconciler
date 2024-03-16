@@ -607,8 +607,45 @@ namespace Reconciler.Tests
             Assert.IsNotNull(reloaded.Manys.Skip(1).First().ManyOne);
         }
 
-#if EFCORE
         [TestMethod]
+        public void TestMoveSputnikFromEarthToMars()
+        {
+            TestGraph(new Star
+                {
+                    Id = "sun",
+                    Planets = {
+                        new Planet {
+                            Id = "earth",
+                            Moons =
+                            {
+                                new Moon { Id = "sputnik" }
+                            }
+                        },
+                        new Planet {
+                            Id = "mars"
+                        }
+                    }
+                }, new Star
+                {
+                    Id = "sun",
+                    Planets = {
+                        new Planet {
+                            Id = "earth",
+                            Moons =
+                            {
+                                new Moon { Id = "sputnik" }
+                            }
+                        },
+                        new Planet {
+                            Id = "mars"
+                        }
+                    }
+                }, s => s.WithMany(e => e.Planets, p => p.WithMany(e => e.Moons))
+            );
+        }
+
+#if EFCORE
+            [TestMethod]
         public void TestAddToCollectionManually()
         {
             ClearDb();
@@ -728,7 +765,7 @@ namespace Reconciler.Tests
         }
 
         [TestMethod]
-        public void TestMoveSputnikFromEarthToMars()
+        public void TestMoveSputnikFromEarthToMarsManually()
         {
             ClearDb();
 
@@ -773,7 +810,7 @@ namespace Reconciler.Tests
         }
 
         [TestMethod]
-        public void TestMoveSputnikToMarsFromEarth()
+        public void TestMoveSputnikToMarsFromEarthManually()
         {
             ClearDb();
 
