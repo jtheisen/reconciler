@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,12 +14,16 @@ namespace MonkeyBusters.Reconciliation.Internal
     /// </summary>
     class EntityKey
     {
+        private readonly IEntityType entityType;
         private readonly KeyValuePair<String, Object>[] pairs;
         private readonly Int32 hash;
 
-        internal EntityKey(KeyValuePair<String, Object>[] pairs)
+        internal EntityKey(IEntityType entityType, KeyValuePair<String, Object>[] pairs)
         {
+            this.entityType = entityType;
             this.pairs = pairs;
+
+            hash ^= entityType.Name.GetHashCode();
 
             foreach (var pair in pairs)
             {
@@ -30,6 +35,7 @@ namespace MonkeyBusters.Reconciliation.Internal
 
         public override Boolean Equals(Object obj)
             => obj is EntityKey other
+                && Object.ReferenceEquals(entityType, other.entityType)
                 && other.pairs.Length == pairs.Length
                 && other.pairs.Zip(pairs, (l, r) => l.Value.Equals(r.Value)).All(b => b);
 
@@ -47,14 +53,15 @@ namespace MonkeyBusters.Reconciliation.Internal
         /// <param name="db">The context.</param>
         /// <param name="entity">The entity.</param>
         /// <returns>The key of the given entity.</returns>
-        public static EntityKey GetEntityKey<E>(this DbContext db, E entity)
-            where E : class
+        public static EntityKey GetEntityKey(this DbContext db, Object entity)
         {
             if (entity == null) return null;
 
             if (!db.Entry(entity).IsKeySet) return null;
 
-            var keyDefinition = db.Model.FindEntityType(typeof(E)).FindPrimaryKey();
+            var entityKeyType = db.Model.FindEntityType(entity.GetType());
+
+            var keyDefinition = entityKeyType.FindPrimaryKey();
 
             var pairs = keyDefinition.Properties
                 .Select(p => new KeyValuePair<String, Object>(p.PropertyInfo?.Name, p.PropertyInfo?.GetValue(entity)))
@@ -63,7 +70,7 @@ namespace MonkeyBusters.Reconciliation.Internal
             if (pairs.Any(v => v.Key == null)) throw new Exception("The entity has a primary key that isn't mapped to proper properties.");
             if (pairs.Any(v => v.Value == null)) throw new Exception("The entity has at least partially a null primary key.");
 
-            return new EntityKey(pairs);
+            return new EntityKey(keyDefinition.DeclaringEntityType, pairs);
         }
 
         /// <summary>

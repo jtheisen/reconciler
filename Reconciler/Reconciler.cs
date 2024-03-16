@@ -762,6 +762,16 @@ namespace Microsoft.EntityFrameworkCore
             return attachedEntity;
         }
 
+        public static Boolean HaveSameKey(this DbContext db, Object lhs, Object rhs)
+        {
+            if (lhs is null || rhs is null) return false;
+
+            var lhsKey = db.GetEntityKey(lhs);
+            var rhsKey = db.GetEntityKey(rhs);
+
+            return lhsKey == rhsKey;
+        }
+
         /// <summary>
         /// Loads the entity given by the given entity's key to the given extent.
         /// </summary>

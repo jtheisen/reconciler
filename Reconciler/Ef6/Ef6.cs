@@ -1,12 +1,67 @@
 ﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Core;
+using System.Data.Entity.Core.Metadata.Edm;
 using System.Data.Entity.Core.Objects;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
+using System.Runtime.Remoting.Contexts;
+using System.Runtime.Remoting.Messaging;
 
 namespace MonkeyBusters.Reconciliation.Internal
 {
+    abstract class DbContextHelper
+    {
+        public abstract EntityKey GetEntityKey(Object entity);
+
+        public abstract String GetSetName(Object entity);
+
+        static ConcurrentDictionary<Type, DbContextHelper> instances = new ConcurrentDictionary<Type, DbContextHelper>();
+
+        public static DbContextHelper Get<C>(C db)
+            where C : DbContext
+        {
+            return instances.GetOrAdd(db.GetType(), Create, db);
+        }
+
+        static DbContextHelper Create<C>(Type _, C db)
+            where C : DbContext
+        {
+            return new DbContextHelper<C>(db);
+        }
+    }
+
+    class DbContextHelper<C> : DbContextHelper
+        where C : DbContext
+    {
+        ObjectContext objectContext;
+        Dictionary<String, String> typeNameToSetName;
+
+        public DbContextHelper(C db)
+        {
+            objectContext = ((IObjectContextAdapter)db).ObjectContext;
+
+            var container = objectContext.MetadataWorkspace.GetEntityContainer(objectContext.DefaultContainerName, DataSpace.CSpace);
+
+            typeNameToSetName = (
+                from s in container.BaseEntitySets
+                select (s.ElementType.Name, s.Name)
+            ).ToDictionary(p => p.Item1, p => p.Item2);
+        }
+
+        public override EntityKey GetEntityKey(Object entity)
+        {
+            return objectContext.CreateEntityKey(GetSetName(entity), entity);
+        }
+
+        public override String GetSetName(Object entity)
+        {
+            return typeNameToSetName[entity.GetType().Name];
+        }
+    }
+
     static class InternalExtensions
     {
         /// <summary>
@@ -15,13 +70,11 @@ namespace MonkeyBusters.Reconciliation.Internal
         /// <param name="db">The context.</param>
         /// <param name="entity">The entity.</param>
         /// <returns>The key of the given entity.</returns>
-        public static EntityKey GetEntityKey<E>(this DbContext db, E entity)
-            where E : class
+        public static EntityKey GetEntityKey(this DbContext db, Object entity)
         {
-            if (entity == null) return null;
-            var context = ((IObjectContextAdapter)db).ObjectContext;
-            var set = context.CreateObjectSet<E>();
-            var key = context.CreateEntityKey(set.EntitySet.Name, entity);
+            if (entity is null) return null;
+            var helper = DbContextHelper.Get(db);
+            var key = helper.GetEntityKey(entity);
             return key;
         }
 

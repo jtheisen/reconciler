@@ -616,12 +616,14 @@ namespace Reconciler.Tests
                     Planets = {
                         new Planet {
                             Id = "earth",
+                            StarId = "sun",
                             Moons =
                             {
-                                new Moon { Id = "sputnik" }
+                                new Moon { PlanetId = "earth", Id = "sputnik" }
                             }
                         },
                         new Planet {
+                            StarId = "sun",
                             Id = "mars"
                         }
                     }
@@ -631,21 +633,40 @@ namespace Reconciler.Tests
                     Planets = {
                         new Planet {
                             Id = "earth",
-                            Moons =
-                            {
-                                new Moon { Id = "sputnik" }
-                            }
+                            StarId = "sun"
                         },
                         new Planet {
-                            Id = "mars"
+                            StarId = "sun",
+                            Id = "mars",
+                            Moons =
+                            {
+                                new Moon { PlanetId = "mars", Id = "sputnik" }
+                            }
                         }
                     }
                 }, s => s.WithMany(e => e.Planets, p => p.WithMany(e => e.Moons))
             );
         }
 
+        [TestMethod]
+        public void TestEntityKeyUniqueness()
+        {
+            var star0 = new Star { Id = "foo" };
+            var moon0 = new Moon { Id = "foo" };
+
+            var star1 = new Star { Id = "foo" };
+            var moon1 = new Moon { Id = "foo" };
+
+            var db = new Context();
+
+            Assert.IsFalse(db.HaveSameKey(star0, moon0));
+
+            Assert.IsTrue(db.HaveSameKey(star0, star1));
+            Assert.IsTrue(db.HaveSameKey(moon0, moon1));
+        }
+
 #if EFCORE
-            [TestMethod]
+        [TestMethod]
         public void TestAddToCollectionManually()
         {
             ClearDb();
