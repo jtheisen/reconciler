@@ -45,8 +45,45 @@ namespace MonkeyBusters.Reconciliation.Internal
         public static Boolean operator !=(EntityKey lhs, EntityKey rhs) => lhs?.Equals(rhs) == false;
     }
 
+
+
     static class InternalExtensions
     {
+        public static Dictionary<EntityKey, Object> GetAllEntitiesByKey(this DbContext db)
+        {
+            var clrTypeToKeyDefinition = new Dictionary<Type, IKey>();
+
+            var result = new Dictionary<EntityKey, Object>();
+
+            foreach (var entry in db.ChangeTracker.Entries())
+            {
+                var type = entry.Entity.GetType();
+
+                if (!clrTypeToKeyDefinition.TryGetValue(type, out var keyDefinition))
+                {
+                    clrTypeToKeyDefinition[type] = keyDefinition = entry.Metadata.FindPrimaryKey();
+                }
+
+                var entityKey = GetEntityKey(keyDefinition, entry.Entity);
+
+                result.Add(entityKey, entry.Entity);
+            }
+
+            return result;
+        }
+
+        static EntityKey GetEntityKey(IKey keyDefinition, Object entity)
+        {
+            var pairs = keyDefinition.Properties
+                .Select(p => new KeyValuePair<String, Object>(p.PropertyInfo?.Name, p.PropertyInfo?.GetValue(entity)))
+                .ToArray();
+
+            if (pairs.Any(v => v.Key == null)) throw new Exception("The entity has a primary key that isn't mapped to proper properties.");
+            if (pairs.Any(v => v.Value == null)) throw new Exception("The entity has at least partially a null primary key.");
+
+            return new EntityKey(keyDefinition.DeclaringEntityType, pairs);
+        }
+
         /// <summary>
         /// Gets the key for the given entity.
         /// </summary>
@@ -63,14 +100,7 @@ namespace MonkeyBusters.Reconciliation.Internal
 
             var keyDefinition = entityKeyType.FindPrimaryKey();
 
-            var pairs = keyDefinition.Properties
-                .Select(p => new KeyValuePair<String, Object>(p.PropertyInfo?.Name, p.PropertyInfo?.GetValue(entity)))
-                .ToArray();
-
-            if (pairs.Any(v => v.Key == null)) throw new Exception("The entity has a primary key that isn't mapped to proper properties.");
-            if (pairs.Any(v => v.Value == null)) throw new Exception("The entity has at least partially a null primary key.");
-
-            return new EntityKey(keyDefinition.DeclaringEntityType, pairs);
+            return GetEntityKey(keyDefinition, entity);
         }
 
         /// <summary>

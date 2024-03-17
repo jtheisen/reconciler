@@ -175,6 +175,7 @@ namespace Reconciler.Tests
 #if EFCORE
         , IReconcilerLoggerProvider
 #endif
+        , IReconcilerDiagnosticsSettings
     {
         public DbSet<Star> Stars { get; set; }
         public DbSet<Planet> Planets { get; set; }
@@ -252,6 +253,8 @@ namespace Reconciler.Tests
                 public void Dispose() => _action();
             }
         }
+
+        public Boolean ReverseInteration { get; set; }
 
         public ILogger ReconcilerLogger => StaticReconcilerLogger;
 

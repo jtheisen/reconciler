@@ -184,15 +184,15 @@ namespace Reconciler.Tests
             return Enumerable.Range(start, count).Select(i => new EmailAddress { Email = $"test{i}@test.com" }).ToList();
         }
 
-        void TestGraph<E>(E original, E target, Action<ExtentBuilder<E>> extent)
+        void TestGraph<E>(E original, E target, Action<ExtentBuilder<E>> extent, Boolean reverseIteration = false)
             where E : class
         {
-            TestGraph(original, target, extent, out var reloadedTarget, out var reloadedUpdate);
+            TestGraph(original, target, extent, out var reloadedTarget, out var reloadedUpdate, reverseIteration);
 
             AssertGraphEquality(original, reloadedTarget, reloadedUpdate);
         }
 
-        void TestGraph<E>(E original, E target, Action<ExtentBuilder<E>> extent, out E reloadedTarget, out E reloadedUpdate)
+        void TestGraph<E>(E original, E target, Action<ExtentBuilder<E>> extent, out E reloadedTarget, out E reloadedUpdate, Boolean reverseIteration = false)
             where E : class
         {
             var targetJson = JsonConvert.SerializeObject(target, Formatting.Indented);
@@ -211,6 +211,8 @@ namespace Reconciler.Tests
                 Console.WriteLine("Beginning of test reconciliationto target:\n" + targetJson);
 
                 var db = new Context();
+
+                db.ReverseInteration = reverseIteration;
 
                 db.Reconcile(CloneTarget(), extent);
 
@@ -302,7 +304,8 @@ namespace Reconciler.Tests
         }
 
         [TestMethod]
-        public void TestRemoveAndAddMany()
+        [DataRow(false), DataRow(true)]
+        public void TestRemoveAndAddMany(Boolean reverseIteration)
         {
             TestGraph(
                 MakeGraph(new GraphOptions { IncludeTag = t => t.No % 2 == 0 }),
@@ -310,12 +313,14 @@ namespace Reconciler.Tests
                 map => map
                     .WithOne(p => p.Address)
                     .WithMany(p => p.Tags, with => with
-                        .WithShared(e => e.Tag))
+                        .WithShared(e => e.Tag)),
+                reverseIteration
             );
         }
 
         [TestMethod]
-        public void TestRemoveAndAddManyWithNestedStuffAttached()
+        [DataRow(false), DataRow(true)]
+        public void TestRemoveAndAddManyWithNestedStuffAttached(Boolean reverseIteration)
         {
             TestGraph(
                 MakeGraph(new GraphOptions { IncludeTag = t => t.No % 2 == 0, IncludeTagPayload = true }),
@@ -324,7 +329,8 @@ namespace Reconciler.Tests
                     .WithOne(p => p.Address)
                     .WithMany(p => p.Tags, with => with
                         .WithOne(e => e.Payload)
-                        .WithShared(e => e.Tag))
+                        .WithShared(e => e.Tag)),
+                reverseIteration
             );
         }
 
@@ -490,7 +496,8 @@ namespace Reconciler.Tests
         }
 
         [TestMethod]
-        public void TestInsertNestedCollections()
+        [DataRow(false), DataRow(true)]
+        public void TestInsertNestedCollections(Boolean reverseIteration)
         {
             TestGraph(
                 new Star { Id = "sun" },
@@ -499,20 +506,23 @@ namespace Reconciler.Tests
                     Planets = {
                         new Planet {
                             Id = "mars",
+                            StarId = "sun",
                             Moons =
                             {
-                                new Moon { Id = "deimos" },
-                                new Moon { Id = "phobos" }
+                                new Moon { Id = "deimos", PlanetId = "mars" },
+                                new Moon { Id = "phobos", PlanetId = "mars" }
                             }
                         }
                     }
                 },
-                map => map.WithMany(e => e.Planets, map2 => map2.WithMany(e2 => e2.Moons))
+                map => map.WithMany(e => e.Planets, map2 => map2.WithMany(e2 => e2.Moons)),
+                reverseIteration
             );
         }
 
         [TestMethod]
-        public void TestInsertNestedCollectionsAutoInc()
+        [DataRow(false), DataRow(true)]
+        public void TestInsertNestedCollectionsAutoInc(Boolean reverseIteration)
         {
             ClearDb();
 
@@ -539,7 +549,11 @@ namespace Reconciler.Tests
                 }
             );
 
-            new Context().ReconcileAndSaveChanges(root, m0 => m0
+            var db = new Context();
+
+            db.ReverseInteration = reverseIteration;
+
+            db.ReconcileAndSaveChanges(root, m0 => m0
                 .WithMany(e0 => e0.Manys, m1 => m1
                     .WithMany(e1 => e1.ManyManys)
                 )
@@ -608,7 +622,8 @@ namespace Reconciler.Tests
         }
 
         [TestMethod]
-        public void TestMoveSputnikFromEarthToMars()
+        [DataRow(false), DataRow(true)]
+        public void TestMoveSputnikFromEarthToMars(Boolean reverseIteration)
         {
             TestGraph(new Star
                 {
@@ -644,7 +659,8 @@ namespace Reconciler.Tests
                             }
                         }
                     }
-                }, s => s.WithMany(e => e.Planets, p => p.WithMany(e => e.Moons))
+                }, s => s.WithMany(e => e.Planets, p => p.WithMany(e => e.Moons)),
+                reverseIteration
             );
         }
 
@@ -870,5 +886,64 @@ namespace Reconciler.Tests
             Assert.AreEqual(0, earth.Moons.Count);
         }
 #endif
+
+        [TestMethod]
+        public void InvestigateGeneratedKeysRemainDefault()
+        {
+            // Database generated keys don't become something weird
+            // but stay their default.
+
+            var db = new Context();
+
+            var root1 = new AutoIncRoot
+            {
+                Manys =
+                {
+                    new AutoIncMany()
+                }
+            };
+
+            var root1many1 = root1.Manys.Single();
+
+            db.AutoIncRoots.Add(root1 = new AutoIncRoot());
+
+            db.ChangeTracker.DetectChanges();
+
+            Assert.AreEqual(0, root1.Id);
+            Assert.AreEqual(0, root1many1.Id);
+        }
+
+        [TestMethod]
+        public void InvestigateKeyFixup()
+        {
+            // Key fixup only works in EF Core
+
+            var db = new Context();
+
+            var sun = new Star
+            {
+                Id = "sun",
+                Planets =
+                {
+                    new Planet
+                    {
+                        Id = "earth"
+                    }
+                }
+            };
+
+            var earth = sun.Planets.First();
+
+            db.Stars.Add(sun);
+
+            db.ChangeTracker.DetectChanges();
+
+#if EFCORE
+            Assert.AreEqual("sun", earth.StarId);
+#endif
+#if EF6
+            Assert.IsNull(earth.StarId);
+#endif
+        }
     }
 }

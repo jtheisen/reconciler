@@ -14,6 +14,8 @@ using System.Data.Entity.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Internal;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
+using Microsoft.EntityFrameworkCore.Metadata;
 #endif
 
 namespace MonkeyBusters.Reconciliation.Internal
@@ -24,6 +26,24 @@ namespace MonkeyBusters.Reconciliation.Internal
         Modify
     }
 
+    class ReconcilingContext
+    {
+        public Boolean ReverseInteration { get; set; }
+
+        public Dictionary<EntityKey, Object> LoadedEntities { get; set; }
+
+        public IEnumerable<T> Iterate<T>(IReadOnlyCollection<T> collection)
+        {
+            if (ReverseInteration)
+            {
+                return collection.Reverse();
+            }
+            else
+            {
+                return collection;
+            }
+        }
+    }
 
     /// <summary>
     /// Reconcilers are implemented for scalar and collection navigational properties
@@ -34,7 +54,7 @@ namespace MonkeyBusters.Reconciliation.Internal
     {
         public abstract IQueryable<E> AugmentInclude(IQueryable<E> query);
 
-        public abstract Task ReconcileAsync(DbContext db, ReconcileStep step, E attachedEntity, E templateEntity, Int32 nesting);
+        public abstract Task ReconcileAsync(DbContext db, ReconcilingContext rctx, ReconcileStep step, E attachedEntity, E templateEntity, Int32 nesting);
 
         public abstract Task LoadAsync(DbContext db, E attachedEntity);
 
@@ -42,11 +62,9 @@ namespace MonkeyBusters.Reconciliation.Internal
 
         public abstract void Normalize(DbContext db, E entity);
 
-#if EF6
         public abstract void Reset();
 
         public abstract void RemoveOrphans(DbContext db);
-#endif
     }
 
     class EntityReconciler<E, F> : Reconciler<E>
@@ -73,7 +91,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         public override IQueryable<E> AugmentInclude(IQueryable<E> query)
             => query.Include(selectorExpression);
 
-        public override async Task ReconcileAsync(DbContext db, ReconcileStep step, E attachedBaseEntity, E templateBaseEntity, Int32 nesting)
+        public override async Task ReconcileAsync(DbContext db, ReconcilingContext rctx, ReconcileStep step, E attachedBaseEntity, E templateBaseEntity, Int32 nesting)
         {
             var attachedEntity = attachedBaseEntity != null ? selector(attachedBaseEntity) : null;
             var templateEntity = templateBaseEntity != null ? selector(templateBaseEntity) : null;
@@ -83,7 +101,7 @@ namespace MonkeyBusters.Reconciliation.Internal
 
             if (!(templateEntityKey is null) && !(attachedEntityKey is null) && templateEntityKey == attachedEntityKey)
             {
-                await db.ReconcileCoreAsync(step, null, attachedEntity, templateEntity, extent, nesting);
+                await db.ReconcileCoreAsync(rctx, step, null, attachedEntity, templateEntity, extent, nesting);
             }
             else
             {
@@ -92,7 +110,7 @@ namespace MonkeyBusters.Reconciliation.Internal
                     if (attachedEntityKey is null) throw new Exception("Found attached entity to delete without key");
 
                     // This is also just for the deletion and so does not need to execute if removeOrphans is false
-                    await db.ReconcileCoreAsync(step, null, attachedEntity, null, extent, nesting);
+                    await db.ReconcileCoreAsync(rctx, step, null, attachedEntity, null, extent, nesting);
 
                     if (step == ReconcileStep.Modify)
                     {
@@ -112,7 +130,7 @@ namespace MonkeyBusters.Reconciliation.Internal
                     }
 
                     // The attached entity isn't passed as, if it exists, is the one we deleted above.
-                    await db.ReconcileCoreAsync(step, Link, null, templateEntity, extent, nesting);
+                    await db.ReconcileCoreAsync(rctx, step, Link, null, templateEntity, extent, nesting);
                 }
             }
         }
@@ -133,7 +151,6 @@ namespace MonkeyBusters.Reconciliation.Internal
 
         public override void Normalize(DbContext db, E entity) => db.Normalize(selector(entity), extent);
 
-#if EF6
         public override void Reset()
         {
             extent.Reset();
@@ -143,7 +160,6 @@ namespace MonkeyBusters.Reconciliation.Internal
         {
             extent.RemoveOrphans(db);
         }
-#endif
     }
 
     class CollectionReconciler<E, F> : Reconciler<E>
@@ -166,7 +182,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         public override IQueryable<E> AugmentInclude(IQueryable<E> query)
             => query.Include(this.selectorExpression);
 
-        public override async Task ReconcileAsync(DbContext db, ReconcileStep step, E attachedEntity, E templateEntity, Int32 nesting)
+        public override async Task ReconcileAsync(DbContext db, ReconcilingContext rctx, ReconcileStep step, E attachedEntity, E templateEntity, Int32 nesting)
         {
             // FIXME: Tests are failing as we're trying to remove entities with default keys
 
@@ -176,6 +192,18 @@ namespace MonkeyBusters.Reconciliation.Internal
             var templateCollection = templateEntity != null
                 ? selector(templateEntity).ToArray()
                 : Enumerable.Empty<F>();
+
+            if (step == ReconcileStep.Load)
+            {
+                foreach (var e in attachedCollection)
+                {
+                    var key = db.GetEntityKey(e);
+
+                    if (key is null) continue;
+
+                    TrackOrphan(key, e, 0);
+                }
+            }
 
             var toRemove = (
                 from o in attachedCollection
@@ -202,9 +230,9 @@ namespace MonkeyBusters.Reconciliation.Internal
                 }
             ).ToArray();
 
-            foreach (var e in toRemove)
+            foreach (var e in rctx.Iterate(toRemove))
             {
-                await db.ReconcileCoreAsync(step, null, e, null, extent, nesting);
+                await db.ReconcileCoreAsync(rctx, step, null, e, null, extent, nesting);
 
                 if (step == ReconcileStep.Modify)
                 {
@@ -212,32 +240,49 @@ namespace MonkeyBusters.Reconciliation.Internal
                     // orphaned, hence it's enough to just remove it from the parent collection.
                     attachedCollection.Remove(e);
 
-#if EF6
                     TrackOrphan(db.GetEntityKey(e), e, -1);
-#endif
                 }
             }
 
-            foreach (var e in toAdd)
+            foreach (var e in rctx.Iterate(toAdd))
             {
                 void Link(F f)
                 {
                     attachedCollection.Add(f);
                 }
 
-                await db.ReconcileCoreAsync(step, Link, null, e, extent, nesting);
+                F attachedE = null;
 
+                var key = db.GetEntityKey(e);
+
+                // FIXME: make the key retrieval more efficient
                 if (step == ReconcileStep.Modify)
                 {
-#if EF6
-                    TrackOrphan(db.GetEntityKey(e), e, +1);
-#endif
+                    if (!(key is null) && orphans.TryGetValue(db.GetEntityKey(e), out var entry))
+                    {
+                        // In the modifying step, an entity with the same key must have already been loaded
+                        // an can now be picked up. We need to do this because we must not re-add such an
+                        // entity.
+
+                        attachedE = entry.entity;
+                    }
+                    else
+                    {
+                        attachedE = db.AddEntity(e);
+                    }
+                }
+
+                await db.ReconcileCoreAsync(rctx, step, Link, attachedE, e, extent, nesting);
+
+                if (step == ReconcileStep.Modify && !(key is null))
+                {
+                    TrackOrphan(key, e, +1);
                 }
             }
 
-            foreach (var pair in toUpdate)
+            foreach (var pair in rctx.Iterate(toUpdate))
             {
-                await db.ReconcileCoreAsync(step, null, pair.AttachedEntity, pair.TemplateEntity, extent, nesting);
+                await db.ReconcileCoreAsync(rctx, step, null, pair.AttachedEntity, pair.TemplateEntity, extent, nesting);
             }
         }
 
@@ -295,7 +340,6 @@ namespace MonkeyBusters.Reconciliation.Internal
             }
         }
 
-#if EF6
         class OrphanTrackingEntry
         {
             public EntityKey entityKey;
@@ -338,7 +382,6 @@ namespace MonkeyBusters.Reconciliation.Internal
 
             extent.RemoveOrphans(db);
         }
-#endif
     }
 
     abstract class AbstractModifier<E>
@@ -568,6 +611,11 @@ namespace Microsoft.EntityFrameworkCore
     using MonkeyBusters.Reconciliation.Internal;
     using System.Text;
 
+    public interface IReconcilerDiagnosticsSettings
+    {
+        Boolean ReverseInteration { get; }
+    }
+
 #if EFCORE
     public interface IReconcilerLoggerProvider
     {
@@ -647,44 +695,52 @@ namespace Microsoft.EntityFrameworkCore
         internal static async Task<E> ReconcileWithPreparationAsync<E>(this DbContext db, E templateEntity, Action<ExtentBuilder<E>> extent, Int32 nesting)
             where E : class
         {
+            async Task<E> Reconcile()
+            {
+                var settings = db as IReconcilerDiagnosticsSettings;
+
+                var builtExtent = extent.Build();
+
+                var rctx = new ReconcilingContext
+                {
+                    ReverseInteration = settings?.ReverseInteration ?? false
+                };
+
+                builtExtent.Reset();
+
+                var attachedEntity = await db.ReconcileCoreAsync(rctx, ReconcileStep.Load, null, null, templateEntity, builtExtent, nesting);
+
+                attachedEntity = await db.ReconcileCoreAsync(rctx, ReconcileStep.Modify, null, attachedEntity, templateEntity, builtExtent, nesting);
+
+                builtExtent.RemoveOrphans(db);
+
+                return attachedEntity;
+            }
+
 #if EFCORE
             var originalCascadeDeleteTiming = db.ChangeTracker.CascadeDeleteTiming;
+            var originalDeleteOrphansTiming = db.ChangeTracker.DeleteOrphansTiming;
 
             db.ChangeTracker.CascadeDeleteTiming = ChangeTracking.CascadeTiming.Never;
-
-            // Not sure if we ever will need this one:
-            //db.ChangeTracker.DeleteOrphansTiming = ChangeTracking.CascadeTiming.OnSaveChanges;
+            db.ChangeTracker.DeleteOrphansTiming = ChangeTracking.CascadeTiming.Never;
 
             try
             {
-                var builtExtent = extent.Build();
-
-                var attachedEntity = await db.ReconcileCoreAsync(ReconcileStep.Load, null, null, templateEntity, builtExtent, nesting);
-
-                return await db.ReconcileCoreAsync(ReconcileStep.Modify, null, attachedEntity, templateEntity, builtExtent, nesting);
+                return await Reconcile();
             }
             finally
             {
                 db.ChangeTracker.CascadeDeleteTiming = originalCascadeDeleteTiming;
+                db.ChangeTracker.DeleteOrphansTiming = originalDeleteOrphansTiming;
             }
 #endif
 
 #if EF6
-            var builtExtent = extent.Build();
-
-            var attachedEntity = await db.ReconcileCoreAsync(ReconcileStep.Load, null, null, templateEntity, builtExtent, nesting);
-
-            builtExtent.Reset();
-
-            attachedEntity = await db.ReconcileCoreAsync(ReconcileStep.Modify, null, attachedEntity, templateEntity, builtExtent, nesting);
-
-            builtExtent.RemoveOrphans(db);
-
-            return attachedEntity;
+            return await Reconcile();
 #endif
         }
 
-        internal static async Task<E> ReconcileCoreAsync<E>(this DbContext db, ReconcileStep step, Action<E> linkWithParent, E attachedEntity, E templateEntity, IExtent<E> extent, Int32 nesting)
+        internal static async Task<E> ReconcileCoreAsync<E>(this DbContext db, ReconcilingContext rctx, ReconcileStep step, Action<E> linkWithParent, E attachedEntity, E templateEntity, IExtent<E> extent, Int32 nesting)
             where E : class
         {
             db.LogTrace(nesting, "> ReconcileAsync {step}", step);
@@ -735,20 +791,30 @@ namespace Microsoft.EntityFrameworkCore
             {
                 db.LogTrace(nesting, "  > reconciler {reconciler}", reconciler);
 
-                await reconciler.ReconcileAsync(db, step, attachedEntity, templateEntity, nesting + 1);
+                await reconciler.ReconcileAsync(db, rctx, step, attachedEntity, templateEntity, nesting + 1);
 
                 db.LogTrace(nesting, "  < reconciler {reconciler}", reconciler);
             }
 
             if (step == ReconcileStep.Modify)
             {
-                // An entity in the added state does not need updating and UpdateEntity fails with
-                // database-generated keys.
-                if (!doesEntityNeedAdding && templateEntity != null && db.Entry(attachedEntity).State != EntityState.Added)
+                if (!doesEntityNeedAdding && templateEntity != null)
                 {
-                    db.UpdateEntity(attachedEntity, templateEntity);
+                    var state = db.Entry(attachedEntity).State;
 
-                    db.LogTrace(nesting, "  updated entity");
+                    // An entity in the added state does not need updating and UpdateEntity fails with
+                    // database-generated keys.
+                    if (state != EntityState.Added
+#if EF6
+                        // In EF6, the entity remains detached when added merely to a principal's collection
+                        && state != EntityState.Detached
+#endif
+                        )
+                    {
+                        db.UpdateEntity(attachedEntity, templateEntity);
+
+                        db.LogTrace(nesting, "  updated entity");
+                    }
                 }
 
                 foreach (var property in extent.Properties)
@@ -857,7 +923,6 @@ namespace Microsoft.EntityFrameworkCore
             }
         }
 
-#if EF6
         internal static void Reset<E>(this IExtent<E> extent)
             where E : class
         {
@@ -875,7 +940,6 @@ namespace Microsoft.EntityFrameworkCore
                 reconciler.RemoveOrphans(db);
             }
         }
-#endif
 
         internal static void LogTrace(this DbContext db, Int32 nesting, String message, params Object[] args)
         {
