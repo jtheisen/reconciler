@@ -683,7 +683,7 @@ namespace Reconciler.Tests
 
 #if EFCORE
         [TestMethod]
-        public void TestAddToCollectionManually()
+        public void InvestigateAddToCollection()
         {
             ClearDb();
 
@@ -721,7 +721,7 @@ namespace Reconciler.Tests
         }
 
         [TestMethod]
-        public void TestAddScalarManually()
+        public void InvestiageAddScalar()
         {
             ClearDb();
 
@@ -762,7 +762,7 @@ namespace Reconciler.Tests
         }
 
         [TestMethod]
-        public void TestChangeCollectionManually()
+        public void InvestigateChangeCollection()
         {
             ClearDb();
 
@@ -802,7 +802,7 @@ namespace Reconciler.Tests
         }
 
         [TestMethod]
-        public void TestMoveSputnikFromEarthToMarsManually()
+        public void InvestigateMoveSputnikFromEarthToMars()
         {
             ClearDb();
 
@@ -847,7 +847,7 @@ namespace Reconciler.Tests
         }
 
         [TestMethod]
-        public void TestMoveSputnikToMarsFromEarthManually()
+        public void InvestigateMoveSputnikToMarsFromEarth()
         {
             ClearDb();
 
