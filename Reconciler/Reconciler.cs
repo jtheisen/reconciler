@@ -256,20 +256,13 @@ namespace MonkeyBusters.Reconciliation.Internal
                 var key = db.GetEntityKey(e);
 
                 // FIXME: make the key retrieval more efficient
-                if (step == ReconcileStep.Modify)
+                if (step == ReconcileStep.Modify && !(key is null) && orphans.TryGetValue(db.GetEntityKey(e), out var entry))
                 {
-                    if (!(key is null) && orphans.TryGetValue(db.GetEntityKey(e), out var entry))
-                    {
-                        // In the modifying step, an entity with the same key must have already been loaded
-                        // an can now be picked up. We need to do this because we must not re-add such an
-                        // entity.
+                    // In the modifying step, an entity with the same key must have already been loaded
+                    // an can now be picked up. We need to do this because we must not re-add such an
+                    // entity.
 
-                        attachedE = entry.entity;
-                    }
-                    else
-                    {
-                        attachedE = db.AddEntity(e);
-                    }
+                    attachedE = entry.entity;
                 }
 
                 await db.ReconcileCoreAsync(rctx, step, Link, attachedE, e, extent, nesting);
