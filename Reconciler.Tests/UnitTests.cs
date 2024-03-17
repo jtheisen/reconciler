@@ -624,7 +624,7 @@ namespace Reconciler.Tests
             Boolean HaveSameKey(Object lhs, Object rhs)
             {
                 var lKey = db.GetEntityKey(lhs);
-                var rKey = db.GetEntityKey(lhs);
+                var rKey = db.GetEntityKey(rhs);
 
                 return lKey == rKey;
             }

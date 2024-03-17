@@ -2,12 +2,6 @@
 
 [![Build status](https://ci.appveyor.com/api/projects/status/4qjaph7n7hpptso7/branch/master?svg=true)](https://ci.appveyor.com/project/jtheisen/reconciler/branch/master)
 
-> **Warning:** This library is unmaintained. I was motivated to create
-> this initial effort, but I want to be upfront
-> with any potential users that I won't develop it any further.
-> (Last small maintenance was 10/2022 upgrading to EFCore6/.NET6 with version 0.3;
-> the previous releases did not work at all under .NET6 and threw a runtime error)
-
 > **Warning:** The EF Core variant in versions prior to 0.3 on .NET Core became
 > buggy with a change in semantics of later EF Core releases.
 > I don't know with exactly which
@@ -76,7 +70,6 @@ Sometimes we need to employ certain fixes on nested parts of the graph on saving
     .OnInsertion(e => e.CreatedAt == DateTimeOffset.Now)
     .OnUpdate(e => e.ModifiedAt == DateTimeOffset.Now)
 
-
 The `OnUpdate` definitions apply to insertions as well.
 
 Note the use of the equality operator, as the assignment operator can't be used in expression trees in C#. Also note that the insertion definitions prevent modifications on updates - you don't have to worry about modified `CreatedAt` values being persisted to storage.
@@ -94,10 +87,6 @@ The are some things to be aware of:
 
 - I'm using the library in production, but that doesn't mean
   it's mature. The test suite is thin and you may hit issues.
-- I don't use database-generated keys in my own applications (I
-  prefer application-generated uuids over database-generated
-  integer sequences). Reconciler has not been tested with
-  database-generated keys and there may be issues.
 - Specifying relationships on derived classes in models
   with inheritance is not supported.
 - Using entities that are part of an inheritance hierarchy
@@ -112,6 +101,10 @@ The are some things to be aware of:
   entities must appear only once.
 - The `Reconcile` overloads themselves access the database only
   for reading and thus need to be followed by a `SaveChanges` call.
+  Alternatively, `ReconcileAndSaveChanges` does that for you.
+- A `Reconcile` call should normally be followed by a `SaveChanges`.
+  Multiple `Reconcile` calls without saving in between will likely
+  only work properly if the datasets involved a disjoint.
 - The number of reads done is the number of entities either in
   storage or in the template that are covered by the extent and
   have a non-trivial sub-extent themselves. In the above example,
@@ -119,6 +112,18 @@ The are some things to be aware of:
   cause no further load, but there would be one load per
   tag-to-person bridge table row which each include the respective tag.
   There's room for optimization here, but that's where it's at.
+
+Some things didn't work in the past but are supported since version 1.0.0:
+
+- Database-generated keys such as auto-increment integers should now be well-behaved.
+- Moving entities from one collection to another will work if those collections are
+  on the same extent level and the move is done in a single `Reconcile call`:
+  Consider for example the model Stars > Planets > Moons
+  with three entity types, two of which have a foreign key to the object they are
+  orbiting. You can move a moon to a different planet while reconciling on a star.
+  However, you need the extra level of the star so that you can express this operation
+  in a single call to `Reconcile` (as you need at least two planets for a move
+  of a moon to occur).
 
 ## GraphDiff
 
