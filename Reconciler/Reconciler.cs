@@ -262,7 +262,12 @@ namespace MonkeyBusters.Reconciliation.Internal
                     // an can now be picked up. We need to do this because we must not re-add such an
                     // entity.
 
-                    attachedE = entry.entity;
+                    // FIXME: explain the rationale behind the netCount < 0
+
+                    if (entry.netCount < 1)
+                    {
+                        attachedE = entry.entity;
+                    }
                 }
 
                 await db.ReconcileCoreAsync(rctx, step, Link, attachedE, e, extent, nesting);
@@ -819,6 +824,13 @@ namespace Microsoft.EntityFrameworkCore
             db.LogTrace(nesting, "< ReconcileAsync");
 
             return attachedEntity;
+        }
+
+        public static Object GetEntityKeyForTesting(this DbContext db, Object entity)
+        {
+            if (entity is null) return null;
+
+            return db.GetEntityKey(entity);
         }
 
         public static Boolean HaveSameKey(this DbContext db, Object lhs, Object rhs)

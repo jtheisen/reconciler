@@ -218,6 +218,8 @@ namespace Reconciler.Tests
         }
 #endif
 
+        public Boolean ReverseInteration { get; set; }
+
 #if EFCORE
         public static class OptionsMonitor
         {
@@ -253,8 +255,6 @@ namespace Reconciler.Tests
                 public void Dispose() => _action();
             }
         }
-
-        public Boolean ReverseInteration { get; set; }
 
         public ILogger ReconcilerLogger => StaticReconcilerLogger;
 

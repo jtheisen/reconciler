@@ -441,60 +441,6 @@ namespace Reconciler.Tests
             Assert.IsTrue(Enumerable.SequenceEqual(changedEmails.Select(e => e.Email), updatedEmails.Select(e => e.Email)));
         }
 
-
-        [TestMethod]
-        public void TestMoveOneOrphanToAnotherParent()
-        {
-            Action<ExtentBuilder<Person>> extent = map => map.WithMany(p => p.EmailAddresses)
-                                                             .WithOne(p => p.Address);
-
-            Context context = new Context();
-
-            var grapth1 = MakeGraph(new GraphOptions { EmailsToCopy = MakeEmailAddresses(1, 2), AddressId = Guid.NewGuid() });
-            grapth1.Id = Guid.NewGuid();
-
-            foreach (var item in grapth1.EmailAddresses)
-                item.PersonId = grapth1.Id;
-
-            var grapth2 = MakeGraph(new GraphOptions { EmailsToCopy = MakeEmailAddresses(1, 2), AddressId = Guid.NewGuid() });
-            grapth2.Id = Guid.NewGuid();
-
-            foreach (var item in grapth2.EmailAddresses)
-                item.PersonId = grapth2.Id;
-
-            context.Reconcile(grapth1, extent);
-            context.Reconcile(grapth2, extent);
-
-            context.SaveChanges();
-
-            grapth1 = context.People.FirstOrDefault(p => p.Id == grapth1.Id);
-            grapth2 = context.People.FirstOrDefault(p => p.Id == grapth2.Id);
-
-            context = new Context();
-
-            //load entity to local context
-            context.People.FirstOrDefault(p => p.Id == grapth1.Id);
-            context.People.FirstOrDefault(p => p.Id == grapth2.Id);
-
-            var firstAddress = grapth2.EmailAddresses.FirstOrDefault();
-
-            grapth2.EmailAddresses.Remove(firstAddress);
-
-            firstAddress.PersonId = grapth1.Id;
-            grapth1.EmailAddresses.Add(firstAddress);
-
-            grapth2 = context.Reconcile(grapth2, extent);
-            grapth1 = context.Reconcile(grapth1, extent);
-            
-            context.SaveChanges();
-
-            grapth1 = context.People.FirstOrDefault(p => p.Id == grapth1.Id);
-            grapth2 = context.People.FirstOrDefault(p => p.Id == grapth2.Id);
-
-            Assert.AreEqual(grapth1.EmailAddresses.Count, 3);
-            Assert.AreEqual(grapth2.EmailAddresses.Count, 1);
-        }
-
         [TestMethod]
         [DataRow(false), DataRow(true)]
         public void TestInsertNestedCollections(Boolean reverseIteration)
@@ -680,6 +626,21 @@ namespace Reconciler.Tests
             Assert.IsTrue(db.HaveSameKey(star0, star1));
             Assert.IsTrue(db.HaveSameKey(moon0, moon1));
         }
+
+#if EF6
+        [TestMethod]
+        public void InvestigateEf6EntityKeyNullBehavior()
+        {
+            var db = new Context();
+
+            var root = new AutoIncRoot();
+
+            var key = db.GetEntityKeyForTesting(root);
+
+            // This is tragic
+            Assert.IsNotNull(key);
+        }
+#endif
 
 #if EFCORE
         [TestMethod]

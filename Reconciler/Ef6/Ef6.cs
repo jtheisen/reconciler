@@ -75,6 +75,7 @@ namespace MonkeyBusters.Reconciliation.Internal
             if (entity is null) return null;
             var helper = DbContextHelper.Get(db);
             var key = helper.GetEntityKey(entity);
+            if (key.IsTemporary) return null;
             return key;
         }
 
