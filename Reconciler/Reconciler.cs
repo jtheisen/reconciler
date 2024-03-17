@@ -458,7 +458,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         IReadOnlyCollection<AbstractModifier<E>> Properties { get; }
     }
 
-    public static class ExtentBuilder
+    static class ExtentBuilder
     {
         internal static IExtent<E> Build<E>(this Action<ExtentBuilder<E>> extent)
             where E : class
@@ -575,8 +575,14 @@ namespace MonkeyBusters.Reconciliation.Internal
         }
     }
 
+    /// <summary>
+    /// This internal API is only exposed for testing purposes and should not be used
+    /// </summary>
     public static class InternalExtensionsForTesting
     {
+        /// <summary>
+        /// This internal API is only exposed for testing purposes and should not be used
+        /// </summary>
         public static void Normalize<E>(this DbContext db, E entity, Action<ExtentBuilder<E>> extent)
             where E : class
         {
@@ -609,8 +615,14 @@ namespace Microsoft.EntityFrameworkCore
     using MonkeyBusters.Reconciliation.Internal;
     using System.Text;
 
+    /// <summary>
+    /// This internal API is only exposed for testing purposes and should not be used
+    /// </summary>
     public interface IReconcilerDiagnosticsSettings
     {
+        /// <summary>
+        /// This internal API is only exposed for testing purposes and should not be used
+        /// </summary>
         Boolean ReverseInteration { get; }
     }
 
@@ -826,23 +838,6 @@ namespace Microsoft.EntityFrameworkCore
             return attachedEntity;
         }
 
-        public static Object GetEntityKeyForTesting(this DbContext db, Object entity)
-        {
-            if (entity is null) return null;
-
-            return db.GetEntityKey(entity);
-        }
-
-        public static Boolean HaveSameKey(this DbContext db, Object lhs, Object rhs)
-        {
-            if (lhs is null || rhs is null) return false;
-
-            var lhsKey = db.GetEntityKey(lhs);
-            var rhsKey = db.GetEntityKey(rhs);
-
-            return lhsKey == rhsKey;
-        }
-
         /// <summary>
         /// Loads the entity given by the given entity's key to the given extent.
         /// </summary>
@@ -896,18 +891,19 @@ namespace Microsoft.EntityFrameworkCore
         /// </summary>
         /// <typeparam name="E">The entity to clone.</typeparam>
         /// <param name="arbitraryContext">A context providing the model - this doesn't have to be a context the entity is attached to</param>
-        /// <param name="entity"></param>
-        /// <returns></returns>
+        /// <param name="entity">The entity to clone</param>
+        /// <returns>The detached shallow clone</returns>
         public static E CreateDetachedShallowClone<E>(this DbContext arbitraryContext, E entity)
             where E : class
             => arbitraryContext.Entry(entity).CurrentValues.Clone().ToObject() as E;
 
-        public static void SetState<E>(this DbContext db, E entity, EntityState state, Action<ExtentBuilder<E>> extent)
-            where E : class
-        {
-            ForEach(db, entity, (db2, e) => db2.Entry(e).State = state, extent);
-        }
-        
+        /// <summary>
+        /// Executes the given action on all entities in the given extent
+        /// </summary>
+        /// <param name="db">A context providing the model - this doesn't have to be a context the entity is attached to</param>
+        /// <param name="entity">The extent root</param>
+        /// <param name="action">The action to execute</param>
+        /// <param name="extent">The extent to reach into</param>
         public static void ForEach<E>(this DbContext db, E entity, Action<DbContext, Object> action, Action<ExtentBuilder<E>> extent)
             where E : class
         {

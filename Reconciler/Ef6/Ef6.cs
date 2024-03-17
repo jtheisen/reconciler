@@ -62,7 +62,10 @@ namespace MonkeyBusters.Reconciliation.Internal
         }
     }
 
-    static class InternalExtensions
+    /// <summary>
+    /// This internal API is only exposed for testing purposes
+    /// </summary>
+    public static class InternalExtensions
     {
         /// <summary>
         /// Gets the key for the given entity.

@@ -9,10 +9,9 @@ using System.Reflection;
 namespace MonkeyBusters.Reconciliation.Internal
 {
     /// <summary>
-    /// EF Core doesn't have EF6's EntityKey class, so we need to
-    /// replicate it here.
+    /// EF Core doesn't have EF6's EntityKey class, so this is what Reconciler uses instead.
     /// </summary>
-    class EntityKey
+    public class EntityKey
     {
         private readonly IEntityType entityType;
         private readonly KeyValuePair<String, Object>[] pairs;
@@ -45,11 +44,12 @@ namespace MonkeyBusters.Reconciliation.Internal
         public static Boolean operator !=(EntityKey lhs, EntityKey rhs) => lhs?.Equals(rhs) == false;
     }
 
-
-
-    static class InternalExtensions
+    /// <summary>
+    /// This internal API is only exposed for testing purposes
+    /// </summary>
+    public static class InternalExtensions
     {
-        public static Dictionary<EntityKey, Object> GetAllEntitiesByKey(this DbContext db)
+        internal static Dictionary<EntityKey, Object> GetAllEntitiesByKey(this DbContext db)
         {
             var clrTypeToKeyDefinition = new Dictionary<Type, IKey>();
 

@@ -621,10 +621,18 @@ namespace Reconciler.Tests
 
             var db = new Context();
 
-            Assert.IsFalse(db.HaveSameKey(star0, moon0));
+            Boolean HaveSameKey(Object lhs, Object rhs)
+            {
+                var lKey = db.GetEntityKey(lhs);
+                var rKey = db.GetEntityKey(lhs);
 
-            Assert.IsTrue(db.HaveSameKey(star0, star1));
-            Assert.IsTrue(db.HaveSameKey(moon0, moon1));
+                return lKey == rKey;
+            }
+
+            Assert.IsFalse(HaveSameKey(star0, moon0));
+
+            Assert.IsTrue(HaveSameKey(star0, star1));
+            Assert.IsTrue(HaveSameKey(moon0, moon1));
         }
 
 #if EF6
@@ -635,7 +643,7 @@ namespace Reconciler.Tests
 
             var root = new AutoIncRoot();
 
-            var key = db.GetEntityKeyForTesting(root);
+            var key = db.GetEntityKey(root);
 
             // This is tragic
             Assert.IsNotNull(key);

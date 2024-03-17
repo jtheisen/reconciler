@@ -18,7 +18,11 @@ namespace MonkeyBusters.EntityFramework
         {
             var helper = Get(type);
 
-            if (helper.IsCollectionT(collection))
+            if (collection is null)
+            {
+                throw new ArgumentNullException(nameof(collection));
+            }
+            else if (helper.IsCollectionT(collection))
             {
                 helper.AddOrRemove(collection, entity, actuallyAdd);
             }
