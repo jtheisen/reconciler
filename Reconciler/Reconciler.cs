@@ -1036,20 +1036,5 @@ namespace Microsoft.EntityFrameworkCore
                 throw new ArgumentException("Binary expression is supposed to be of the form 'e => e.<Property> == <expr>");
             }
         }
-
-        internal static E CloneEntity<E>(E entity)
-            where E : class
-        {
-            var type = entity.GetType();
-
-            var clone = (E)Activator.CreateInstance(type);
-
-            foreach (var property in type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
-            {
-                property.SetValue(clone, property.GetValue(entity));
-            }
-
-            return clone;
-        }
     }
 }
