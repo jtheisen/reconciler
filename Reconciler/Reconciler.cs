@@ -16,10 +16,26 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
+using System.Security.Cryptography;
 #endif
 
 namespace MonkeyBusters.Reconciliation.Internal
 {
+    internal class KeyedEntity<E>
+    {
+        private readonly EntityKey key;
+        private readonly E entity;
+
+        public EntityKey Key => key;
+        public E Entity => entity;
+
+        public KeyedEntity(EntityKey key, E entity)
+        {
+            this.key = key;
+            this.entity = entity;
+        }
+    }
+
     enum ReconcileStep
     {
         Load,
@@ -184,8 +200,6 @@ namespace MonkeyBusters.Reconciliation.Internal
 
         public override async Task ReconcileAsync(DbContext db, ReconcilingContext rctx, ReconcileStep step, E attachedEntity, E templateEntity, Int32 nesting)
         {
-            // FIXME: Tests are failing as we're trying to remove entities with default keys
-
             var attachedCollection = attachedEntity != null ?
                 selector(attachedEntity)
                 : new List<F>();
@@ -193,45 +207,58 @@ namespace MonkeyBusters.Reconciliation.Internal
                 ? selector(templateEntity).ToArray()
                 : Enumerable.Empty<F>();
 
+            var attachedKeyedEntities = attachedCollection
+                .Select(e => new KeyedEntity<F>(db.GetEntityKey(e), e))
+                .ToArray();
+            
+            var templateKeyedEntities = templateCollection
+                .Select(e => new KeyedEntity<F>(db.GetEntityKey(e), e))
+                .ToArray();
+
             if (step == ReconcileStep.Load)
             {
-                foreach (var e in attachedCollection)
+                foreach (var e in attachedKeyedEntities)
                 {
-                    var key = db.GetEntityKey(e);
+                    var key = e.Key;
 
                     if (key is null) continue;
 
-                    TrackOrphan(key, e, 0);
+                    TrackOrphan(key, e.Entity, 0);
                 }
             }
 
             var toRemove = (
-                from o in attachedCollection
-                where db.GetEntityKey(o) != null
-                join n in templateCollection on db.GetEntityKey(o) equals db.GetEntityKey(n) into news
-                where news.Count() == 0 && db.Entry(o)?.State != EntityState.Deleted
+                from o in attachedKeyedEntities
+                where o.Key != null
+                join n in templateKeyedEntities on o.Key equals n.Key into news
+                where news.Count() == 0 && db.Entry(o.Entity)?.State != EntityState.Deleted
                 select o
             ).ToArray();
 
             var toAdd = (
-                from n in templateCollection
-                join o in attachedCollection on db.GetEntityKey(n) equals db.GetEntityKey(o) into olds
+                from n in templateKeyedEntities
+                join o in attachedKeyedEntities on n.Key equals o.Key into olds
                 where olds.Count() == 0
                 select n
             ).ToArray();
 
             var toUpdate = (
-                from o in attachedCollection
-                join n in templateCollection on db.GetEntityKey(o) equals db.GetEntityKey(n)
+                from o in attachedKeyedEntities
+                join n in templateKeyedEntities on o.Key equals n.Key
                 select new
                 {
-                    AttachedEntity = o,
-                    TemplateEntity = n
+                    AttachedEntity = o.Entity,
+                    TemplateEntity = n.Entity
                 }
             ).ToArray();
 
-            foreach (var e in rctx.Iterate(toRemove))
+            foreach (var ke in rctx.Iterate(toRemove))
             {
+                var e = ke.Entity;
+                var key = ke.Key;
+
+                if (db.Entry(e)?.State == EntityState.Deleted) continue;
+
                 await db.ReconcileCoreAsync(rctx, step, null, e, null, extent, nesting);
 
                 if (step == ReconcileStep.Modify)
@@ -240,12 +267,15 @@ namespace MonkeyBusters.Reconciliation.Internal
                     // orphaned, hence it's enough to just remove it from the parent collection.
                     attachedCollection.Remove(e);
 
-                    TrackOrphan(db.GetEntityKey(e), e, -1);
+                    TrackOrphan(key, e, -1);
                 }
             }
 
-            foreach (var e in rctx.Iterate(toAdd))
+            foreach (var ke in rctx.Iterate(toAdd))
             {
+                var e = ke.Entity;
+                var key = ke.Key;
+
                 void Link(F f)
                 {
                     attachedCollection.Add(f);
@@ -253,10 +283,7 @@ namespace MonkeyBusters.Reconciliation.Internal
 
                 F attachedE = null;
 
-                var key = db.GetEntityKey(e);
-
-                // FIXME: make the key retrieval more efficient
-                if (step == ReconcileStep.Modify && !(key is null) && orphans.TryGetValue(db.GetEntityKey(e), out var entry))
+                if (step == ReconcileStep.Modify && !(key is null) && orphans.TryGetValue(key, out var entry))
                 {
                     // In the modifying step, an entity with the same key must have already been loaded
                     // an can now be picked up. We need to do this because we must not re-add such an

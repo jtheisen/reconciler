@@ -11,7 +11,7 @@ namespace MonkeyBusters.Reconciliation.Internal
     /// <summary>
     /// EF Core doesn't have EF6's EntityKey class, so this is what Reconciler uses instead.
     /// </summary>
-    public class EntityKey
+    public class EntityKey : IEquatable<EntityKey>
     {
         private readonly IEntityType entityType;
         private readonly KeyValuePair<String, Object>[] pairs;
@@ -34,9 +34,15 @@ namespace MonkeyBusters.Reconciliation.Internal
 
         public override Boolean Equals(Object obj)
             => obj is EntityKey other
+                && Equals(other);
+
+        public Boolean Equals(EntityKey other)
+        {
+            return !(other is null)
                 && Object.ReferenceEquals(entityType, other.entityType)
                 && other.pairs.Length == pairs.Length
                 && other.pairs.Zip(pairs, (l, r) => l.Value.Equals(r.Value)).All(b => b);
+        }
 
         public override Int32 GetHashCode() => hash;
 
