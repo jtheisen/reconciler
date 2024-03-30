@@ -39,14 +39,13 @@ namespace MonkeyBusters.Reconciliation.Internal
     enum ReconcileStep
     {
         Load,
-        Modify
+        Modify,
+        Clone
     }
 
     class ReconcilingContext
     {
         public Boolean ReverseInteration { get; set; }
-
-        public Dictionary<EntityKey, Object> LoadedEntities { get; set; }
 
         public IEnumerable<T> Iterate<T>(IReadOnlyCollection<T> collection)
         {
@@ -278,7 +277,13 @@ namespace MonkeyBusters.Reconciliation.Internal
 
                 void Link(F f)
                 {
-                    attachedCollection.Add(f);
+                    // Ususally, the entity was already put into the right collection by EF on
+                    // adding the entity to the context with consistent foreign keys. The explicit
+                    // adding to the collection only needs to happen when that is not the case.
+                    if (!attachedCollection.Contains(f))
+                    {
+                        attachedCollection.Add(f);
+                    }
                 }
 
                 F attachedE = null;
@@ -287,9 +292,17 @@ namespace MonkeyBusters.Reconciliation.Internal
                 {
                     // In the modifying step, an entity with the same key must have already been loaded
                     // an can now be picked up. We need to do this because we must not re-add such an
-                    // entity.
+                    // entity and hence need to set the attached entity.
 
-                    // FIXME: explain the rationale behind the netCount < 0
+                    // -- Note for the condition around the next line:
+                    // We found an entity with the same key. We should use it as the attached entity.
+                    // However, if the net count is positive, it means we already inserted one with
+                    // the same key! This can only happen on EF6, where database-generated keys are
+                    // non-null and compare equal to each other. In this case, we're adding multiple
+                    // (different) entities which will get their own keys later. If the netCount is
+                    // not positive, this means we've loaded an entity with this key and hence we can't
+                    // be in the case of a to-be-auto-generated default key match. Quite the hack,
+                    // but only relevant for EF6.
 
                     if (entry.netCount < 1)
                     {
@@ -641,6 +654,7 @@ namespace Microsoft.EntityFrameworkCore
 #endif
     using MonkeyBusters.Reconciliation.Internal;
     using System.Text;
+    using System.Xml.Linq;
 
     /// <summary>
     /// This internal API is only exposed for testing purposes and should not be used
@@ -745,6 +759,11 @@ namespace Microsoft.EntityFrameworkCore
 
                 builtExtent.Reset();
 
+#if EFCORE
+                // This fixes key consistency and allows to remove the respective requirement in EF Core
+                templateEntity = db.CreateDetachedDeepClone(templateEntity, extent);
+#endif
+
                 var attachedEntity = await db.ReconcileCoreAsync(rctx, ReconcileStep.Load, null, null, templateEntity, builtExtent, nesting);
 
                 attachedEntity = await db.ReconcileCoreAsync(rctx, ReconcileStep.Modify, null, attachedEntity, templateEntity, builtExtent, nesting);
@@ -807,7 +826,7 @@ namespace Microsoft.EntityFrameworkCore
 
             if (doesEntityNeedAdding)
             {
-                if (step == ReconcileStep.Modify)
+                if (step == ReconcileStep.Modify || step == ReconcileStep.Clone)
                 {
                     attachedEntity = db.AddEntity(templateEntity);
 
@@ -817,10 +836,6 @@ namespace Microsoft.EntityFrameworkCore
                     }
 
                     db.LogTrace(nesting, "  added new entity");
-                }
-                else
-                {
-                    //attachedEntity = templateEntity;
                 }
             }
 
@@ -914,6 +929,36 @@ namespace Microsoft.EntityFrameworkCore
         }
 
         /// <summary>
+        /// Creates a detached deep clone from the given entity
+        /// </summary>
+        /// <typeparam name="E"></typeparam>
+        /// <param name="db"></param>
+        /// <param name="entity"></param>
+        /// <param name="extent"></param>
+        /// <returns></returns>
+        public static E CreateDetachedDeepClone<E>(this DbContext db, E entity, Action<ExtentBuilder<E>> extent)
+            where E : class
+        {
+            var newDb = db.CreateContext();
+
+            var task = newDb.ReconcileCoreAsync(new ReconcilingContext(), ReconcileStep.Clone, null, null, entity, extent.Build(), 0);
+            task.Wait();
+
+            newDb.ChangeTracker.DetectChanges();
+
+            return task.Result;
+        }
+
+        static DbContext CreateContext(this DbContext db)
+        {
+            var newDb = Activator.CreateInstance(db.GetType()) as DbContext;
+
+            if (newDb is null) throw new Exception($"Could not create a new context of type {db.GetType()}.");
+
+            return newDb;
+        }
+
+        /// <summary>
         /// Creates a detached shallow clone from the given entity
         /// </summary>
         /// <typeparam name="E">The entity to clone.</typeparam>
@@ -922,6 +967,8 @@ namespace Microsoft.EntityFrameworkCore
         /// <returns>The detached shallow clone</returns>
         public static E CreateDetachedShallowClone<E>(this DbContext arbitraryContext, E entity)
             where E : class
+            // FIXME: This is also done in a different way by the AddEntity extension method,
+            // this should probably be unified.
             => arbitraryContext.Entry(entity).CurrentValues.Clone().ToObject() as E;
 
         /// <summary>

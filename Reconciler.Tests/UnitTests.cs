@@ -652,6 +652,107 @@ namespace Reconciler.Tests
 
 #if EFCORE
         [TestMethod]
+        public void TestKeyConsistencyFixing()
+        {
+            var templateSun = new Star
+            {
+                Id = "sun",
+                Planets = {
+                    new Planet {
+                        Id = "earth",
+                        Moons =
+                        {
+                            new Moon { Id = "sputnik" }
+                        }
+                    },
+                    new Planet {
+                        Id = "mars"
+                    }
+                }
+            };
+
+            var sun = new Context().CreateDetachedDeepClone(templateSun, s => s.WithMany(e => e.Planets, p => p.WithMany(e => e.Moons)));
+
+            var earth = sun.Planets.Single(e => e.Id == "earth");
+            var mars = sun.Planets.Single(e => e.Id == "mars");
+            var sputnik = earth.Moons.Single();
+
+            Assert.AreEqual("sun", earth.StarId);
+            Assert.AreEqual("sun", mars.StarId);
+            Assert.AreEqual("earth", sputnik.PlanetId);
+        }
+
+        [TestMethod]
+        public void TestKeyConsistencyFixingNonRegression()
+        {
+            var templateSun = new Star
+            {
+                Id = "sun",
+                Planets = {
+                    new Planet {
+                        Id = "earth",
+                        Moons =
+                        {
+                            new Moon { PlanetId = "earth", Id = "sputnik" }
+                        }
+                    },
+                    new Planet {
+                        Id = "mars"
+                    }
+                }
+            };
+
+            var sun = new Context().CreateDetachedDeepClone(templateSun, s => s.WithMany(e => e.Planets, p => p.WithMany(e => e.Moons)));
+
+            var earth = sun.Planets.Single(e => e.Id == "earth");
+            var mars = sun.Planets.Single(e => e.Id == "mars");
+            var sputnik = earth.Moons.Single();
+
+            Assert.AreEqual("sun", earth.StarId);
+            Assert.AreEqual("sun", mars.StarId);
+            Assert.AreEqual("earth", sputnik.PlanetId);
+        }
+
+        [TestMethod]
+        [DataRow(false), DataRow(true)]
+        public void TestNoParentKeysMoveSputnikFromEarthToMars(Boolean reverseIteration)
+        {
+            TestGraph(new Star
+            {
+                Id = "sun",
+                Planets = {
+                        new Planet {
+                            Id = "earth",
+                            Moons =
+                            {
+                                new Moon { Id = "sputnik" }
+                            }
+                        },
+                        new Planet {
+                            Id = "mars"
+                        }
+                    }
+            }, new Star
+            {
+                Id = "sun",
+                Planets = {
+                        new Planet {
+                            Id = "earth",
+                        },
+                        new Planet {
+                            Id = "mars",
+                            Moons =
+                            {
+                                new Moon { Id = "sputnik" }
+                            }
+                        }
+                    }
+            }, s => s.WithMany(e => e.Planets, p => p.WithMany(e => e.Moons)),
+                reverseIteration
+            );
+        }
+
+        [TestMethod]
         public void InvestigateAddToCollection()
         {
             ClearDb();
