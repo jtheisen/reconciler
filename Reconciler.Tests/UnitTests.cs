@@ -59,9 +59,9 @@ namespace Reconciler.Tests
     }
 
     [TestClass]
-    public class UnitTest1
+    public class ReconcilerTests
     {
-        public UnitTest1()
+        public ReconcilerTests()
         {
         }
 
@@ -652,7 +652,10 @@ namespace Reconciler.Tests
 
 #if EFCORE
         [TestMethod]
-        public void TestKeyConsistencyFixing()
+        [DataRow(null)] // no foreign keys
+        [DataRow("earth")] // one foreign key
+        [DataRow("mars")] // an inconsistent foreign key
+        public void TestKeyConsistencyFixing(String sputnikPlanetId)
         {
             var templateSun = new Star
             {
@@ -662,38 +665,7 @@ namespace Reconciler.Tests
                         Id = "earth",
                         Moons =
                         {
-                            new Moon { Id = "sputnik" }
-                        }
-                    },
-                    new Planet {
-                        Id = "mars"
-                    }
-                }
-            };
-
-            var sun = new Context().CreateDetachedDeepClone(templateSun, s => s.WithMany(e => e.Planets, p => p.WithMany(e => e.Moons)));
-
-            var earth = sun.Planets.Single(e => e.Id == "earth");
-            var mars = sun.Planets.Single(e => e.Id == "mars");
-            var sputnik = earth.Moons.Single();
-
-            Assert.AreEqual("sun", earth.StarId);
-            Assert.AreEqual("sun", mars.StarId);
-            Assert.AreEqual("earth", sputnik.PlanetId);
-        }
-
-        [TestMethod]
-        public void TestKeyConsistencyFixingNonRegression()
-        {
-            var templateSun = new Star
-            {
-                Id = "sun",
-                Planets = {
-                    new Planet {
-                        Id = "earth",
-                        Moons =
-                        {
-                            new Moon { PlanetId = "earth", Id = "sputnik" }
+                            new Moon { PlanetId = sputnikPlanetId, Id = "sputnik" }
                         }
                     },
                     new Planet {
