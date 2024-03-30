@@ -466,13 +466,13 @@ namespace MonkeyBusters.Reconciliation.Internal
         where E : class
     {
         private readonly Action<E> action;
-        private readonly Boolean onlyOnAdditions;
+        private readonly Boolean onAdditions;
 
-        public ActionModifier(String property, Action<E> action, Boolean onlyOnAdditions)
+        public ActionModifier(String property, Action<E> action, Boolean onAdditions)
             : base(property)
         {
             this.action = action;
-            this.onlyOnAdditions = onlyOnAdditions;
+            this.onAdditions = onAdditions;
         }
 
         public override void Modify(DbContext db, E attachedEntity, E templateEntity)
@@ -484,9 +484,22 @@ namespace MonkeyBusters.Reconciliation.Internal
                 entry.CurrentValues[property] = entry.OriginalValues[property];
             }
 
-            if (!onlyOnAdditions || entry.State == EntityState.Added)
+            if (entry.State == EntityState.Added)
             {
-                action(attachedEntity);
+                if (onAdditions)
+                {
+                    action(attachedEntity);
+                }
+            }
+            else if (entry.State != EntityState.Deleted)
+            {
+                if (!onAdditions)
+                {
+                    // In the update case this action must override the value that comes from the template
+                    entry.CurrentValues[property] = entry.OriginalValues[property];
+
+                    action(attachedEntity);
+                }
             }
         }
     }
@@ -522,6 +535,8 @@ namespace MonkeyBusters.Reconciliation.Internal
         IReadOnlyCollection<Reconciler<E>> IExtent<E>.Reconcilers => reconcilers;
 
         IReadOnlyCollection<AbstractModifier<E>> IExtent<E>.Properties => properties;
+
+        public static Action<ExtentBuilder<E>> CastAction(Action<ExtentBuilder<E>> extent) => extent;
 
         /// <summary>
         /// Include a scalar navigational property in the current extent as owned - the referenced
@@ -597,7 +612,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         public ExtentBuilder<E> OnInsertion(Expression<Func<E, Boolean>> definition)
         {
             var info = Properties.GetEqualityExpressionInfo(definition);
-            properties.Add(new ActionModifier<E>(info.Property.Name, e => info.Property.SetValue(e, info.Definition(e)), onlyOnAdditions: true));
+            properties.Add(new ActionModifier<E>(info.Property.Name, e => info.Property.SetValue(e, info.Definition(e)), onAdditions: true));
             return this;
         }
 
@@ -610,7 +625,7 @@ namespace MonkeyBusters.Reconciliation.Internal
         public ExtentBuilder<E> OnUpdate(Expression<Func<E, Boolean>> definition)
         {
             var info = Properties.GetEqualityExpressionInfo(definition);
-            properties.Add(new ActionModifier<E>(info.Property.Name, e => info.Property.SetValue(e, info.Definition(e)), onlyOnAdditions: false));
+            properties.Add(new ActionModifier<E>(info.Property.Name, e => info.Property.SetValue(e, info.Definition(e)), onAdditions: false));
             return this;
         }
     }

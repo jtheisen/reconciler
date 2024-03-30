@@ -70,9 +70,9 @@ Sometimes we need to employ certain fixes on nested parts of the graph on saving
     .OnInsertion(e => e.CreatedAt == DateTimeOffset.Now)
     .OnUpdate(e => e.ModifiedAt == DateTimeOffset.Now)
 
-The `OnUpdate` definitions apply to insertions as well.
+The `OnUpdate` definitions does _not_ also apply (as of version 1.1.1) to insertions.
 
-Note the use of the equality operator, as the assignment operator can't be used in expression trees in C#. Also note that the insertion definitions prevent modifications on updates - you don't have to worry about modified `CreatedAt` values being persisted to storage.
+Note the use of the equality operator, as the assignment operator can't be used in expression trees in C#.
 
 ### Exclude properties
 

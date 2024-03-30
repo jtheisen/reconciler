@@ -34,6 +34,8 @@ namespace Reconciler.Tests
 
         public Star Star { get; set; }
 
+        public Int32 Misc { get; set; }
+
         public ICollection<Moon> Moons { get; set; } = new List<Moon>();
     }
 

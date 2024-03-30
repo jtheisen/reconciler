@@ -611,6 +611,39 @@ namespace Reconciler.Tests
         }
 
         [TestMethod]
+        public void TestFieldModifiers()
+        {
+            var firstSun = new Star
+            {
+                Id = "sun",
+                Planets = {
+                        new Planet {
+                            Id = "earth",
+                            StarId = "sun"
+                        }
+                    }
+            };
+
+            var extent = ExtentBuilder<Star>.CastAction(s => s
+                .WithMany(s => s.Planets, p => p
+                    .OnInsertion(p => p.Misc == 21 + 21)
+                    .OnUpdate(p => p.Misc == p.Misc + 8)
+                )
+            );
+
+            var first = new Context().ReconcileAndSaveChanges(firstSun, extent);
+
+            var second = new Context().ReconcileAndSaveChanges(firstSun, extent);
+
+            Assert.AreEqual(42, first.Planets.First().Misc);
+            Assert.AreEqual(50, second.Planets.First().Misc);
+
+            var afterRemoval = new Context().ReconcileAndSaveChanges(new Star { Id = "sun" }, extent);
+
+            Assert.AreEqual(0, afterRemoval.Planets.Count);
+        }
+
+        [TestMethod]
         public void TestEntityKeyUniqueness()
         {
             var star0 = new Star { Id = "foo" };
