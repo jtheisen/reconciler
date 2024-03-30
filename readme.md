@@ -93,10 +93,12 @@ The are some things to be aware of:
   in all other contexts is also untested and likely doesn't work yet.
 - Many-to-many relationships are not supported and
   will probably never be.
-- The foreign key properties in the template entity must be set
+- Key Consistency Requirement: In the EF6 version, the foreign
+  key properties in the template entity must be set
   to match the respective navigational properties before the call
   to one of the `Reconcile` overloads is made. For example, it should be that
   `person.AddressId == person.Address.Id` in the unit test's sample model.
+  For EF Core, there is no longer this requirement since version 1.1.0.
 - The extent must represent a subtree, i.e. have no cycles, and all
   entities must appear only once.
 - The `Reconcile` overloads themselves access the database only

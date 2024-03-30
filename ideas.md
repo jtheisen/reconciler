@@ -22,8 +22,8 @@ Deletion is often not literal but semantically expressed by setting a flag. Reco
 
 should mean that
 
-* loading only loads those with `DeletedAt` being null (as it is `default(DateTimeOffset?)`) and
-* deletion should not delete but merely set `DeletedAt` to `DateTimeOffset.Now`.
+- loading only loads those with `DeletedAt` being null (as it is `default(DateTimeOffset?)`) and
+- deletion should not delete but merely set `DeletedAt` to `DateTimeOffset.Now`.
 
 It should be investigated how EF Core's idea of default filters can fit into this.
 
@@ -31,8 +31,8 @@ It should be investigated how EF Core's idea of default filters can fit into thi
 
 Sometimes you need to transplant a persisted graph to a new one, replacing the respective ids with new ones. In my experience that's the kind of logic that always breaks when done in an ad-hoc manner because
 
-* it needs to be fixed every time some new relationship is added that needs to be cloned as well, but
-* the respective feature needing cloning is often neglected in testing.
+- it needs to be fixed every time some new relationship is added that needs to be cloned as well, but
+- the respective feature needing cloning is often neglected in testing.
 
 This could be avoided by the common loading code sharing the extent definition with the cloning function, using Reconciler to do the cloning.
 
@@ -42,7 +42,7 @@ The cloning feature is a bit different from all the others in that it requires k
 
 Similar to cloning is the task of taking all entities in all specified collection nav props from one entity, the merge source, and reroot them to another, the merge target.
 
-### Key Consistency Requirement Drop
+### Key Consistency Requirement Drop (Done for EF Core in 1.1.0)
 
 Reconciler currently requires that for all given nav props values, the respective foreign keys need to be set and match - which is something easy to get wrong when done explicitly in a client:
 
