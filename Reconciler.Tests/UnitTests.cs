@@ -369,8 +369,11 @@ namespace Reconciler.Tests
 
             var reloaded = new Context().LoadExtent(graph, GetExtent());
 
-            Assert.AreEqual(null, reconciled.Address.City);
             Assert.AreEqual(null, reloaded.Address.City);
+
+            // This used to test for null prior to 1.1.1, but we can't help to change this:
+            // WithBlacked must behave like WithReadOnly on saving to be useful.
+            Assert.AreEqual("Bochum", reconciled.Address.City);
         }
 
         [TestMethod]
@@ -611,7 +614,7 @@ namespace Reconciler.Tests
         }
 
         [TestMethod]
-        public void TestFieldModifiers()
+        public void TestOnInsertAndOnUpdate()
         {
             var firstSun = new Star
             {
@@ -624,8 +627,8 @@ namespace Reconciler.Tests
                     }
             };
 
-            var extent = ExtentBuilder<Star>.CastAction(s => s
-                .WithMany(s => s.Planets, p => p
+            var extent = ExtentBuilder<Star>.CastAction(es => es
+                .WithMany(s => s.Planets, ep => ep
                     .OnInsertion(p => p.Misc == 21 + 21)
                     .OnUpdate(p => p.Misc == p.Misc + 8)
                 )
@@ -641,6 +644,46 @@ namespace Reconciler.Tests
             var afterRemoval = new Context().ReconcileAndSaveChanges(new Star { Id = "sun" }, extent);
 
             Assert.AreEqual(0, afterRemoval.Planets.Count);
+        }
+
+        [TestMethod]
+        public void TestBlacked2()
+        {
+            // Another blacken test just to be sure.
+
+            var firstSun = new Star
+            {
+                Id = "sun",
+                Planets = {
+                        new Planet {
+                            Id = "earth",
+                            StarId = "sun",
+                            Misc = 42
+                        }
+                    }
+            };
+
+            new Context().ReconcileAndSaveChanges(firstSun, es => es.WithMany(s => s.Planets));
+
+            // Change the misc to test if it is not erroneously writting with a blackened reconciliation
+            firstSun.Planets.First().Misc = 11;
+
+            new Context().ReconcileAndSaveChanges(firstSun, es => es
+                .WithMany(s => s.Planets, ep => ep
+                    .WithBlacked(p => p.Misc)
+                )
+            );
+
+            var reloadedBlacked = new Context().LoadExtent(firstSun, es => es
+                .WithMany(s => s.Planets, ep => ep
+                    .WithBlacked(p => p.Misc)
+                )
+            );
+
+            var reloadedPlain = new Context().LoadExtent(firstSun, es => es.WithMany(s => s.Planets));
+
+            Assert.AreEqual(0, reloadedBlacked.Planets.First().Misc);
+            Assert.AreEqual(42, reloadedPlain.Planets.First().Misc);
         }
 
         [TestMethod]

@@ -17,6 +17,7 @@ using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
 using System.Security.Cryptography;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 #endif
 
 namespace MonkeyBusters.Reconciliation.Internal
@@ -422,9 +423,15 @@ namespace MonkeyBusters.Reconciliation.Internal
         }
     }
 
+    enum ModifierMode
+    {
+        Reconciling,
+        Loading
+    }
+
     abstract class AbstractModifier<E>
     {
-        public abstract void Modify(DbContext db, E attachedEntity, E templateEntity);
+        public abstract void Modify(DbContext db, ModifierMode mode, E attachedEntity, E templateEntity);
     }
 
     abstract class AbstractPropertyModifier<E> : AbstractModifier<E>
@@ -443,8 +450,10 @@ namespace MonkeyBusters.Reconciliation.Internal
     {
         public ReadOnlyModifier(String property) : base(property) { }
 
-        public override void Modify(DbContext db, E attachedEntity, E templateEntity)
+        public override void Modify(DbContext db, ModifierMode mode, E attachedEntity, E templateEntity)
         {
+            if (mode != ModifierMode.Reconciling) return;
+
             var entry = db.Entry(attachedEntity);
             entry.CurrentValues[property] = entry.OriginalValues[property];
         }
@@ -455,10 +464,20 @@ namespace MonkeyBusters.Reconciliation.Internal
     {
         public BlackenModifier(String property) : base(property) { }
 
-        public override void Modify(DbContext db, E attachedEntity, E templateEntity)
+        public override void Modify(DbContext db, ModifierMode mode, E attachedEntity, E templateEntity)
         {
-            var entry = db.Entry(attachedEntity);
-            entry.CurrentValues[property] = default(T);
+            if (mode == ModifierMode.Loading)
+            {
+                var entry = db.Entry(attachedEntity);
+                entry.CurrentValues[property] = default(T);
+            }
+            else if (mode == ModifierMode.Reconciling)
+            {
+                // Blacken works like read-only on writing as don't want to remove the blackened data.
+
+                var entry = db.Entry(attachedEntity);
+                entry.CurrentValues[property] = entry.OriginalValues[property];
+            }
         }
     }
 
@@ -475,8 +494,10 @@ namespace MonkeyBusters.Reconciliation.Internal
             this.onAdditions = onAdditions;
         }
 
-        public override void Modify(DbContext db, E attachedEntity, E templateEntity)
+        public override void Modify(DbContext db, ModifierMode mode, E attachedEntity, E templateEntity)
         {
+            if (mode != ModifierMode.Reconciling) return;
+
             var entry = db.Entry(attachedEntity);
 
             if (entry.State != EntityState.Added)
@@ -886,7 +907,7 @@ namespace Microsoft.EntityFrameworkCore
 
                 foreach (var property in extent.Properties)
                 {
-                    property.Modify(db, attachedEntity, templateEntity);
+                    property.Modify(db, ModifierMode.Reconciling, attachedEntity, templateEntity);
                 }
             }
 
@@ -922,7 +943,7 @@ namespace Microsoft.EntityFrameworkCore
 
             foreach (var property in extent.Properties)
             {
-                property.Modify(db, attachedEntity, null);
+                property.Modify(db, ModifierMode.Loading, attachedEntity, null);
             }
 
             return attachedEntity;

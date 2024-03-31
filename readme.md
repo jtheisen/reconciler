@@ -81,6 +81,10 @@ Sometimes some properties should not be updated, and sometimes they shouldn't ev
     .WithReadOnly(e => e.Unmodifiable)
     .WithBlacked(e => e.Secret)
 
+The latter implies `.WithReadOnly` on writing since version 1.1.1 so that
+saving what was previously loaded doesn't accidentally overwrite the
+blacked field.
+
 ## Some details and caveats
 
 The are some things to be aware of:
