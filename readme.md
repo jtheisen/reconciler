@@ -70,7 +70,7 @@ Sometimes we need to employ certain fixes on nested parts of the graph on saving
     .OnInsertion(e => e.CreatedAt == DateTimeOffset.Now)
     .OnUpdate(e => e.ModifiedAt == DateTimeOffset.Now)
 
-The `OnUpdate` definitions does _not_ also apply (as of version 1.1.1) to insertions.
+The `OnUpdate` definitions does _not_ also apply (as of version 1.2.0) to insertions.
 
 Note the use of the equality operator, as the assignment operator can't be used in expression trees in C#.
 
@@ -81,7 +81,7 @@ Sometimes some properties should not be updated, and sometimes they shouldn't ev
     .WithReadOnly(e => e.Unmodifiable)
     .WithBlacked(e => e.Secret)
 
-The latter implies `.WithReadOnly` on writing since version 1.1.1 so that
+The latter implies `.WithReadOnly` on writing since version 1.2.0 so that
 saving what was previously loaded doesn't accidentally overwrite the
 blacked field.
 
