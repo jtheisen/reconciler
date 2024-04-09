@@ -102,7 +102,7 @@ The are some things to be aware of:
   to match the respective navigational properties before the call
   to one of the `Reconcile` overloads is made. For example, it should be that
   `person.AddressId == person.Address.Id` in the unit test's sample model.
-  For EF Core, there is no longer this requirement since version 1.1.0.
+  For EF Core, this requirement was lifted in version 1.1.0.
 - The extent must represent a subtree, i.e. have no cycles, and all
   entities must appear only once.
 - The `Reconcile` overloads themselves access the database only
@@ -110,7 +110,7 @@ The are some things to be aware of:
   Alternatively, `ReconcileAndSaveChanges` does that for you.
 - A `Reconcile` call should normally be followed by a `SaveChanges`.
   Multiple `Reconcile` calls without saving in between will likely
-  only work properly if the datasets involved a disjoint.
+  only work properly if the datasets involved are disjoint.
 - The number of reads done is the number of entities either in
   storage or in the template that are covered by the extent and
   have a non-trivial sub-extent themselves. In the above example,
@@ -123,7 +123,7 @@ Some things didn't work in the past but are supported since version 1.0.0:
 
 - Database-generated keys such as auto-increment integers should now be well-behaved.
 - Moving entities from one collection to another will work if those collections are
-  on the same extent level and the move is done in a single `Reconcile call`:
+  on the same extent level and the move is done in a single `Reconcile` call:
   Consider for example the model Stars > Planets > Moons
   with three entity types, two of which have a foreign key to the object they are
   orbiting. You can move a moon to a different planet while reconciling on a star.
