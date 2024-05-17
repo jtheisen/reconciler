@@ -968,19 +968,38 @@ namespace Microsoft.EntityFrameworkCore
         /// Creates a detached deep clone from the given entity
         /// </summary>
         /// <typeparam name="E"></typeparam>
-        /// <param name="db"></param>
-        /// <param name="entity"></param>
-        /// <param name="extent"></param>
-        /// <returns></returns>
+        /// <param name="db">An empty context to use for creating the deep clone</param>
+        /// <param name="entity">The entity to clone</param>
+        /// <param name="extent">The extent in which to clone</param>
+        /// <returns>A detached clone of the entity</returns>
         public static E CreateDetachedDeepClone<E>(this DbContext db, E entity, Action<ExtentBuilder<E>> extent)
             where E : class
         {
-            var newDb = db.CreateContext();
+            if (db.ChangeTracker.Entries().FirstOrDefault() != null)
+            {
+                throw new Exception($"You need to call this method on a fresh context");
+            }
 
-            var task = newDb.ReconcileCoreAsync(new ReconcilingContext(), ReconcileStep.Clone, null, null, entity, extent.Build(), 0);
+            var task = db.ReconcileCoreAsync(new ReconcilingContext(), ReconcileStep.Clone, null, null, entity, extent.Build(), 0);
             task.Wait();
 
-            newDb.ChangeTracker.DetectChanges();
+            db.ChangeTracker.DetectChanges();
+
+#if EFCORE
+            db.ChangeTracker.Clear();
+#endif
+
+#if EF6
+            foreach (var entry in db.ChangeTracker.Entries())
+            {
+                entry.State = EntityState.Detached;
+            }
+
+            if (db.ChangeTracker.Entries().FirstOrDefault() != null)
+            {
+                throw new Exception($"Unexpected attached entry in context");
+            }
+#endif
 
             return task.Result;
         }

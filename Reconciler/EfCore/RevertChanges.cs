@@ -92,6 +92,9 @@ entities from these collections.
 An implementation without this restriction is possible but either
 very complex or requiring Entity Framework's internal APIs.
 
+Alternatively, you can upgrade to EF Core 7, for which the implementation
+is trivial.
+
 The respective entity types and their properties are:
 
 ";
